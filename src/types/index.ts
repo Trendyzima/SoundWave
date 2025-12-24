@@ -10,6 +10,17 @@ export interface Song {
   releaseDate: string;
   plays: number;
   likes: number;
+  description?: string;
+  hashtags?: string[];
+}
+
+export interface Hashtag {
+  id: string;
+  tag: string;
+  usage_count: number;
+  plays_count: number;
+  last_used_at: string;
+  rank?: number;
 }
 
 export interface User {

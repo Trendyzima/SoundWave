@@ -1,23 +1,47 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Song } from '../../types';
-import { Heart, MessageCircle, Repeat2, Share2, Play, BarChart3 } from 'lucide-react';
+import { Heart, MessageCircle, Repeat2, Share2, Play, BarChart3, Hash } from 'lucide-react';
 import { formatDuration } from '../../lib/utils';
 import { usePlayerStore } from '../../stores/playerStore';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../stores/authStore';
 
 interface SongFeedCardProps {
   song: Song;
+  onHashtagClick?: (hashtag: string) => void;
 }
 
-export default function SongFeedCard({ song }: SongFeedCardProps) {
+export default function SongFeedCard({ song, onHashtagClick }: SongFeedCardProps) {
+  const navigate = useNavigate();
   const { playSong, currentSong, isPlaying, togglePlay } = usePlayerStore();
   const { user } = useAuth();
   const [liked, setLiked] = useState(false);
   const [localLikes, setLocalLikes] = useState(song.likes);
+  const [hashtags, setHashtags] = useState<string[]>(song.hashtags || []);
   
   const isCurrentSong = currentSong?.id === song.id;
+  
+  useEffect(() => {
+    // Fetch hashtags for this song
+    fetchHashtags();
+  }, [song.id]);
+  
+  const fetchHashtags = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('song_hashtags')
+        .select('hashtag_id, hashtags(tag)')
+        .eq('song_id', song.id);
+      
+      if (error) throw error;
+      
+      const tags = data?.map((item: any) => item.hashtags?.tag).filter(Boolean) || [];
+      setHashtags(tags);
+    } catch (error) {
+      console.error('Error fetching hashtags:', error);
+    }
+  };
   
   const handlePlay = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -53,6 +77,15 @@ export default function SongFeedCard({ song }: SongFeedCardProps) {
     }
   };
   
+  const handleHashtagClick = (e: React.MouseEvent, tag: string) => {
+    e.preventDefault();
+    if (onHashtagClick) {
+      onHashtagClick(tag);
+    } else {
+      navigate(`/search?hashtag=${encodeURIComponent(tag)}`);
+    }
+  };
+  
   return (
     <article className="border-b border-white/10 px-4 py-3 hover:bg-white/[0.02] transition-colors">
       <div className="flex gap-3">
@@ -78,8 +111,44 @@ export default function SongFeedCard({ song }: SongFeedCardProps) {
           
           {/* Song Title */}
           <Link to={`/song/${song.id}`}>
-            <p className="mb-3 text-[15px]">{song.title}</p>
+            <p className="mb-2 text-[15px]">{song.title}</p>
           </Link>
+          
+          {/* Description with Hashtags */}
+          {song.description && (
+            <p className="mb-3 text-[15px] text-muted-foreground">
+              {song.description.split(/(\s+)/).map((word, index) => {
+                if (word.startsWith('#')) {
+                  return (
+                    <button
+                      key={index}
+                      onClick={(e) => handleHashtagClick(e, word.toLowerCase())}
+                      className="text-primary hover:underline"
+                    >
+                      {word}
+                    </button>
+                  );
+                }
+                return <span key={index}>{word}</span>;
+              })}
+            </p>
+          )}
+          
+          {/* Hashtags Pills */}
+          {hashtags.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {hashtags.map((tag, index) => (
+                <button
+                  key={index}
+                  onClick={(e) => handleHashtagClick(e, tag)}
+                  className="px-2 py-1 bg-primary/10 hover:bg-primary/20 text-primary rounded-full text-xs flex items-center gap-1 transition-colors"
+                >
+                  <Hash className="w-3 h-3" />
+                  {tag.substring(1)}
+                </button>
+              ))}
+            </div>
+          )}
           
           {/* Song Preview Card */}
           <Link to={`/song/${song.id}`} className="block mb-3">

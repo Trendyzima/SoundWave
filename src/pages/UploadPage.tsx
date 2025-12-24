@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAuth } from '../stores/authStore';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { Upload, Music, Image as ImageIcon, Loader2, CheckCircle2 } from 'lucide-react';
+import { Upload, Music, Image as ImageIcon, Loader2, CheckCircle2, Hash } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export default function UploadPage() {
@@ -21,6 +21,7 @@ export default function UploadPage() {
     album: '',
     genre: '',
     releaseDate: '',
+    description: '',
   });
   
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -30,6 +31,13 @@ export default function UploadPage() {
   if (!isAuthenticated) {
     return <Navigate to="/auth" />;
   }
+  
+  // Extract hashtags from description
+  const extractHashtags = (text: string): string[] => {
+    const hashtagRegex = /#[\w\u0080-\uFFFF]+/g;
+    const matches = text.match(hashtagRegex);
+    return matches ? matches.map(tag => tag.toLowerCase()) : [];
+  };
   
   const handleAudioChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -127,7 +135,7 @@ export default function UploadPage() {
       
       // Save song metadata to database
       setUploadProgress('Saving song details...');
-      const { error: dbError } = await supabase
+      const { data: songData, error: dbError } = await supabase
         .from('songs')
         .insert({
           user_id: user.id,
@@ -139,16 +147,47 @@ export default function UploadPage() {
           audio_url: audioUrl,
           cover_url: coverUrl,
           release_date: formData.releaseDate || null,
-        });
+          description: formData.description || null,
+        })
+        .select()
+        .single();
       
       if (dbError) throw dbError;
+      
+      // Process hashtags
+      const hashtags = extractHashtags(formData.description);
+      if (hashtags.length > 0) {
+        setUploadProgress('Processing hashtags...');
+        
+        for (const tag of hashtags) {
+          // Increment or create hashtag
+          await supabase.rpc('increment_hashtag_usage', { hashtag_tag: tag });
+          
+          // Get hashtag ID
+          const { data: hashtagData } = await supabase
+            .from('hashtags')
+            .select('id')
+            .eq('tag', tag)
+            .single();
+          
+          if (hashtagData) {
+            // Link song to hashtag
+            await supabase
+              .from('song_hashtags')
+              .insert({
+                song_id: songData.id,
+                hashtag_id: hashtagData.id,
+              });
+          }
+        }
+      }
       
       setSuccess(true);
       setUploadProgress('Upload complete!');
       
       // Reset form after 2 seconds
       setTimeout(() => {
-        navigate('/library');
+        navigate('/');
       }, 2000);
       
     } catch (err: any) {
@@ -159,6 +198,8 @@ export default function UploadPage() {
       setUploading(false);
     }
   };
+  
+  const detectedHashtags = extractHashtags(formData.description);
   
   return (
     <div className="min-h-screen pb-32 pt-20">
@@ -311,6 +352,31 @@ export default function UploadPage() {
                   onChange={(e) => setFormData({ ...formData, releaseDate: e.target.value })}
                   className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                 />
+              </div>
+              
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium mb-2">
+                  Description & Hashtags
+                </label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-none"
+                  placeholder="Tell us about your song... Use #hashtags to categorize (e.g., #newmusic #hiphop #viral)"
+                />
+                {detectedHashtags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {detectedHashtags.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1 bg-primary/20 text-primary rounded-full text-sm flex items-center gap-1"
+                      >
+                        <Hash className="w-3 h-3" />
+                        {tag.substring(1)}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             
