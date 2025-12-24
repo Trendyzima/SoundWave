@@ -17,15 +17,23 @@ export default function SongFeedCard({ song, onHashtagClick }: SongFeedCardProps
   const { playSong, currentSong, isPlaying, togglePlay } = usePlayerStore();
   const { user } = useAuth();
   const [liked, setLiked] = useState(false);
+  const [reposted, setReposted] = useState(false);
   const [localLikes, setLocalLikes] = useState(song.likes);
+  const [localReposts, setLocalReposts] = useState(0);
   const [hashtags, setHashtags] = useState<string[]>(song.hashtags || []);
+  const [commentsCount, setCommentsCount] = useState(0);
   
   const isCurrentSong = currentSong?.id === song.id;
   
   useEffect(() => {
-    // Fetch hashtags for this song
     fetchHashtags();
-  }, [song.id]);
+    fetchCommentsCount();
+    fetchRepostsCount();
+    if (user) {
+      checkLiked();
+      checkReposted();
+    }
+  }, [song.id, user]);
   
   const fetchHashtags = async () => {
     try {
@@ -40,6 +48,66 @@ export default function SongFeedCard({ song, onHashtagClick }: SongFeedCardProps
       setHashtags(tags);
     } catch (error) {
       console.error('Error fetching hashtags:', error);
+    }
+  };
+  
+  const fetchCommentsCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('comments')
+        .select('id', { count: 'exact', head: true })
+        .eq('song_id', song.id);
+      
+      if (error) throw error;
+      setCommentsCount(count || 0);
+    } catch (error) {
+      console.error('Error fetching comments count:', error);
+    }
+  };
+  
+  const fetchRepostsCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('reposts')
+        .select('id', { count: 'exact', head: true })
+        .eq('song_id', song.id);
+      
+      if (error) throw error;
+      setLocalReposts(count || 0);
+    } catch (error) {
+      console.error('Error fetching reposts count:', error);
+    }
+  };
+  
+  const checkLiked = async () => {
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from('likes')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('song_id', song.id)
+        .single();
+      
+      setLiked(!!data);
+    } catch (error) {
+      // Not liked
+    }
+  };
+  
+  const checkReposted = async () => {
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from('reposts')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('song_id', song.id)
+        .single();
+      
+      setReposted(!!data);
+    } catch (error) {
+      // Not reposted
     }
   };
   
@@ -74,6 +142,31 @@ export default function SongFeedCard({ song, onHashtagClick }: SongFeedCardProps
       }
     } catch (error) {
       console.error('Error toggling like:', error);
+    }
+  };
+  
+  const handleRepost = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    
+    try {
+      if (reposted) {
+        await supabase
+          .from('reposts')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('song_id', song.id);
+        setReposted(false);
+        setLocalReposts(prev => prev - 1);
+      } else {
+        await supabase
+          .from('reposts')
+          .insert({ user_id: user.id, song_id: song.id });
+        setReposted(true);
+        setLocalReposts(prev => prev + 1);
+      }
+    } catch (error) {
+      console.error('Error toggling repost:', error);
     }
   };
   
@@ -186,12 +279,21 @@ export default function SongFeedCard({ song, onHashtagClick }: SongFeedCardProps
               className="flex items-center gap-2 px-2 py-1 rounded-full hover:bg-primary/10 hover:text-primary transition-colors group"
             >
               <MessageCircle className="w-[18px] h-[18px]" />
-              <span className="text-sm text-muted-foreground group-hover:text-primary">24</span>
+              <span className="text-sm text-muted-foreground group-hover:text-primary">{commentsCount}</span>
             </Link>
             
-            <button className="flex items-center gap-2 px-2 py-1 rounded-full hover:bg-green-500/10 hover:text-green-500 transition-colors group">
+            <button
+              onClick={handleRepost}
+              className={`flex items-center gap-2 px-2 py-1 rounded-full transition-colors group ${
+                reposted
+                  ? 'text-green-500'
+                  : 'hover:bg-green-500/10 hover:text-green-500'
+              }`}
+            >
               <Repeat2 className="w-[18px] h-[18px]" />
-              <span className="text-sm text-muted-foreground group-hover:text-green-500">12</span>
+              <span className={`text-sm ${reposted ? 'text-green-500' : 'text-muted-foreground group-hover:text-green-500'}`}>
+                {localReposts}
+              </span>
             </button>
             
             <button

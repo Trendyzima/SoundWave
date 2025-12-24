@@ -28,10 +28,13 @@ export interface User {
   username: string;
   email: string;
   avatarUrl: string;
-  bio: string;
+  bio?: string;
+  location?: string;
+  website?: string;
+  coverUrl?: string;
   joinedDate: string;
-  followers: number;
-  following: number;
+  followersCount: number;
+  followingCount: number;
 }
 
 export interface Comment {
@@ -43,7 +46,36 @@ export interface Comment {
   content: string;
   timestamp: string;
   likes: number;
-  replies: Comment[];
+  replies?: Comment[];
+  parentId?: string;
+}
+
+export interface Conversation {
+  id: string;
+  participant1Id: string;
+  participant2Id: string;
+  participant1: User;
+  participant2: User;
+  lastMessage?: Message;
+  updatedAt: string;
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  content: string;
+  createdAt: string;
+  readAt?: string;
+}
+
+export interface Repost {
+  id: string;
+  userId: string;
+  songId: string;
+  createdAt: string;
+  user?: User;
+  song?: Song;
 }
 
 export interface Playlist {
