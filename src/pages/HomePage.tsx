@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Song } from '../types';
-import SongCard from '../components/features/SongCard';
-import PlaylistCard from '../components/features/PlaylistCard';
-import { Sparkles, TrendingUp, Clock, Loader2 } from 'lucide-react';
+import SongFeedCard from '../components/features/SongFeedCard';
+import { Loader2, Music } from 'lucide-react';
 import { useAuth } from '../stores/authStore';
 import { Navigate } from 'react-router-dom';
 
@@ -11,6 +10,7 @@ export default function HomePage() {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'for-you' | 'following'>('for-you');
   
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
@@ -24,11 +24,10 @@ export default function HomePage() {
         .from('songs')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(20);
+        .limit(50);
       
       if (error) throw error;
       
-      // Map database songs to app Song type
       const mappedSongs: Song[] = (data || []).map((song) => ({
         id: song.id,
         title: song.title,
@@ -63,116 +62,58 @@ export default function HomePage() {
     return <Navigate to="/auth" />;
   }
   
-  const recentlyPlayed = songs.slice(0, 4);
-  const aiRecommendations = songs.slice(2, 6);
-  const trending = songs.slice(1, 5);
-  
   return (
-    <div className="min-h-screen pb-32 pt-20">
-      {/* Hero Section */}
-      <section className="relative mb-12 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-dark opacity-60" />
-        <div className="absolute inset-0">
-          <img
-            src="https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=1600&h=600&fit=crop"
-            alt="Music background"
-            className="w-full h-full object-cover opacity-30"
-          />
-        </div>
-        
-        <div className="relative max-w-screen-2xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
-          <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 px-4 py-2 glass-card rounded-full mb-6">
-              <Sparkles className="w-4 h-4 text-accent" />
-              <span className="text-sm font-semibold">AI-Powered Discovery</span>
+    <div className="min-h-screen pb-20 md:pb-4 pt-14">
+      <div className="max-w-screen-xl mx-auto md:ml-64 lg:ml-72 md:mr-0">
+        <div className="max-w-2xl">
+          {/* Tabs */}
+          <div className="sticky top-14 bg-background/80 backdrop-blur-xl border-b border-white/10 z-10">
+            <div className="flex">
+              <button
+                onClick={() => setActiveTab('for-you')}
+                className={`flex-1 px-4 py-4 font-semibold transition-colors relative hover:bg-white/5 ${
+                  activeTab === 'for-you' ? 'text-foreground' : 'text-muted-foreground'
+                }`}
+              >
+                For you
+                {activeTab === 'for-you' && (
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full" />
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab('following')}
+                className={`flex-1 px-4 py-4 font-semibold transition-colors relative hover:bg-white/5 ${
+                  activeTab === 'following' ? 'text-foreground' : 'text-muted-foreground'
+                }`}
+              >
+                Following
+                {activeTab === 'following' && (
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full" />
+                )}
+              </button>
             </div>
-            
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-              Welcome back to
-              <br />
-              <span className="gradient-text">Your Sound</span>
-            </h1>
-            
-            <p className="text-lg sm:text-xl text-muted-foreground mb-8 max-w-2xl">
-              Pick up where you left off or discover something new with AI-curated recommendations just for you.
-            </p>
           </div>
+          
+          {/* Feed */}
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : songs.length === 0 ? (
+            <div className="text-center py-20 px-4">
+              <Music className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
+              <h2 className="text-xl font-bold mb-2">No music yet</h2>
+              <p className="text-muted-foreground">Be the first to upload and share your music!</p>
+            </div>
+          ) : (
+            <div>
+              {songs.map((song) => (
+                <SongFeedCard key={song.id} song={song} />
+              ))}
+            </div>
+          )}
         </div>
-      </section>
-      
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 space-y-12">
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          </div>
-        ) : songs.length === 0 ? (
-          <div className="text-center py-20">
-            <Music className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
-            <h2 className="text-2xl font-bold mb-2">No music yet</h2>
-            <p className="text-muted-foreground mb-6">Be the first to upload and share your music!</p>
-            <a
-              href="/upload"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-primary rounded-lg font-semibold hover:scale-105 transition-transform"
-            >
-              <Upload className="w-5 h-5" />
-              Upload Your First Song
-            </a>
-          </div>
-        ) : (
-          <>
-            {/* Continue Listening */}
-            {recentlyPlayed.length > 0 && (
-              <section>
-                <div className="flex items-center gap-3 mb-6">
-                  <Clock className="w-6 h-6 text-primary" />
-                  <h2 className="text-2xl sm:text-3xl font-bold">Continue Listening</h2>
-                </div>
-                
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {recentlyPlayed.map((song) => (
-                    <SongCard key={song.id} song={song} />
-                  ))}
-                </div>
-              </section>
-            )}
-            
-            {/* Personalized Feed */}
-            {aiRecommendations.length > 0 && (
-              <section>
-                <div className="flex items-center gap-3 mb-6">
-                  <TrendingUp className="w-6 h-6 text-primary" />
-                  <h2 className="text-2xl sm:text-3xl font-bold">Your Personalized Feed</h2>
-                </div>
-                
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {aiRecommendations.map((song) => (
-                    <SongCard key={song.id} song={song} />
-                  ))}
-                </div>
-              </section>
-            )}
-            
-            {/* Trending */}
-            {trending.length > 0 && (
-              <section>
-                <div className="flex items-center gap-3 mb-6">
-                  <TrendingUp className="w-6 h-6 text-accent" />
-                  <h2 className="text-2xl sm:text-3xl font-bold">Trending Now</h2>
-                </div>
-                
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {trending.map((song) => (
-                    <SongCard key={song.id} song={song} />
-                  ))}
-                </div>
-              </section>
-            )}
-          </>
-        )}
       </div>
     </div>
   );
 }
-
-// Missing imports
-import { Music, Upload } from 'lucide-react';

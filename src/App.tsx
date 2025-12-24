@@ -4,6 +4,8 @@ import { authService } from './lib/auth';
 import { useAuthStore } from './stores/authStore';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Navbar from './components/layout/Navbar';
+import BottomNav from './components/layout/BottomNav';
+import DesktopSidebar from './components/layout/DesktopSidebar';
 import Player from './components/layout/Player';
 import HomePage from './pages/HomePage';
 import AuthPage from './pages/AuthPage';
@@ -55,6 +57,7 @@ export default function App() {
     <Router>
       <div className="min-h-screen bg-background text-foreground">
         <Navbar />
+        <DesktopSidebar />
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/auth" element={<AuthPage />} />
@@ -65,6 +68,7 @@ export default function App() {
           <Route path="/library" element={<LibraryPage />} />
           <Route path="/upload" element={<UploadPage />} />
         </Routes>
+        <BottomNav />
         <Player />
       </div>
     </Router>

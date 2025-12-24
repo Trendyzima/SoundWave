@@ -97,8 +97,8 @@ export default function Player() {
       />
       
       {/* Player UI */}
-      <div className="fixed bottom-0 left-0 right-0 h-24 glass-card border-t border-white/10 z-50">
-        <div className="h-full max-w-screen-2xl mx-auto px-4 sm:px-6 flex items-center gap-4 sm:gap-6">
+      <div className="fixed bottom-16 md:bottom-0 left-0 right-0 md:left-64 lg:left-72 h-20 glass-card border-t border-white/10 z-50">
+        <div className="h-full px-4 flex items-center gap-4">
           {/* Song Info */}
           <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0 sm:flex-initial sm:w-80">
             <img
