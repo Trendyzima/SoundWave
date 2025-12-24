@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, Music, Mail, User } from 'lucide-react';
+import { Home, Search, Radio, Mail, User } from 'lucide-react';
 
 export default function BottomNav() {
   const location = useLocation();
@@ -7,7 +7,7 @@ export default function BottomNav() {
   const navItems = [
     { to: '/', icon: Home, label: 'Home' },
     { to: '/search', icon: Search, label: 'Search' },
-    { to: '/upload', icon: Music, label: 'Upload' },
+    { to: '/podcasts', icon: Radio, label: 'Podcasts' },
     { to: '/messages', icon: Mail, label: 'Messages' },
     { to: '/profile', icon: User, label: 'Profile' },
   ];

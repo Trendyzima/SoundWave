@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, Music, Mail, User, Library, Sparkles, Upload } from 'lucide-react';
+import { Home, Search, Music, Mail, User, Library, Sparkles, Upload, Radio } from 'lucide-react';
 import { useAuth } from '../../stores/authStore';
 
 export default function DesktopSidebar() {
@@ -9,6 +9,7 @@ export default function DesktopSidebar() {
   const navItems = [
     { to: '/', icon: Home, label: 'Home' },
     { to: '/search', icon: Search, label: 'Explore' },
+    { to: '/podcasts', icon: Radio, label: 'Podcasts' },
     { to: '/messages', icon: Mail, label: 'Messages' },
     { to: '/ai-assistant', icon: Sparkles, label: 'AI Assistant' },
     { to: '/library', icon: Library, label: 'Library' },

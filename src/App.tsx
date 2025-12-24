@@ -16,6 +16,9 @@ import SearchPage from './pages/SearchPage';
 import LibraryPage from './pages/LibraryPage';
 import UploadPage from './pages/UploadPage';
 import MessagesPage from './pages/MessagesPage';
+import PodcastsPage from './pages/PodcastsPage';
+import GoLivePage from './pages/GoLivePage';
+import PodcastPlayerPage from './pages/PodcastPlayerPage';
 
 export default function App() {
   const { login, logout, setLoading } = useAuthStore();
@@ -69,6 +72,9 @@ export default function App() {
           <Route path="/library" element={<LibraryPage />} />
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/messages" element={<MessagesPage />} />
+          <Route path="/podcasts" element={<PodcastsPage />} />
+          <Route path="/go-live" element={<GoLivePage />} />
+          <Route path="/podcast/:id" element={<PodcastPlayerPage />} />
         </Routes>
         <BottomNav />
         <Player />

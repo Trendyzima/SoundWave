@@ -100,3 +100,30 @@ export interface UserStats {
   topSongs: { song: Song; plays: number }[];
   topGenres: { genre: string; count: number }[];
 }
+
+export interface Podcast {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  coverUrl?: string;
+  audioUrl?: string;
+  duration: number;
+  category?: string;
+  isLive: boolean;
+  wasLive: boolean;
+  viewersCount: number;
+  likes: number;
+  createdAt: string;
+  updatedAt: string;
+  endedAt?: string;
+  host?: User;
+}
+
+export interface StreamViewer {
+  id: string;
+  podcastId: string;
+  userId?: string;
+  joinedAt: string;
+  lastSeenAt: string;
+}
