@@ -1,40 +1,121 @@
-import { useState } from 'react';
-import { Search as SearchIcon, TrendingUp, Clock } from 'lucide-react';
-import { mockSongs } from '../constants/mockData';
+import { useState, useEffect } from 'react';
+import { Search as SearchIcon, TrendingUp, Clock, Loader2, Music } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { Song } from '../types';
 import SongCard from '../components/features/SongCard';
-import { useAuthStore } from '../stores/authStore';
+import { useAuth } from '../stores/authStore';
 import { Navigate } from 'react-router-dom';
 
 export default function SearchPage() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState(mockSongs);
+  const [searchResults, setSearchResults] = useState<Song[]>([]);
+  const [allSongs, setAllSongs] = useState<Song[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
+  
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      fetchAllSongs();
+    }
+  }, [isAuthenticated, authLoading]);
+  
+  const fetchAllSongs = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('songs')
+        .select('*')
+        .order('plays', { ascending: false })
+        .limit(50);
+      
+      if (error) throw error;
+      
+      const mappedSongs: Song[] = (data || []).map((song) => ({
+        id: song.id,
+        title: song.title,
+        artist: song.artist,
+        album: song.album || '',
+        coverUrl: song.cover_url || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=400&fit=crop',
+        duration: song.duration,
+        audioUrl: song.audio_url,
+        plays: song.plays,
+        likes: song.likes,
+        releaseDate: song.release_date || '',
+        genre: song.genre || '',
+      }));
+      
+      setAllSongs(mappedSongs);
+      setSearchResults(mappedSongs);
+    } catch (error) {
+      console.error('Error fetching songs:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    
+    if (!query.trim()) {
+      setSearchResults(allSongs);
+      return;
+    }
+    
+    setSearching(true);
+    
+    try {
+      const lowerQuery = query.toLowerCase();
+      
+      // Search in database
+      const { data, error } = await supabase
+        .from('songs')
+        .select('*')
+        .or(
+          `title.ilike.%${query}%,` +
+          `artist.ilike.%${query}%,` +
+          `album.ilike.%${query}%,` +
+          `genre.ilike.%${query}%`
+        )
+        .limit(50);
+      
+      if (error) throw error;
+      
+      const mappedSongs: Song[] = (data || []).map((song) => ({
+        id: song.id,
+        title: song.title,
+        artist: song.artist,
+        album: song.album || '',
+        coverUrl: song.cover_url || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=400&fit=crop',
+        duration: song.duration,
+        audioUrl: song.audio_url,
+        plays: song.plays,
+        likes: song.likes,
+        releaseDate: song.release_date || '',
+        genre: song.genre || '',
+      }));
+      
+      setSearchResults(mappedSongs);
+    } catch (error) {
+      console.error('Error searching:', error);
+    } finally {
+      setSearching(false);
+    }
+  };
+  
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center pt-20">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
   
   if (!isAuthenticated) {
     return <Navigate to="/auth" />;
   }
   
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    
-    if (!query.trim()) {
-      setSearchResults(mockSongs);
-      return;
-    }
-    
-    const filtered = mockSongs.filter(
-      (song) =>
-        song.title.toLowerCase().includes(query.toLowerCase()) ||
-        song.artist.toLowerCase().includes(query.toLowerCase()) ||
-        song.album.toLowerCase().includes(query.toLowerCase()) ||
-        song.genre.toLowerCase().includes(query.toLowerCase())
-    );
-    
-    setSearchResults(filtered);
-  };
-  
-  const trendingSearches = ['The Weeknd', 'Pop Hits', 'Workout Music', 'R&B Classics'];
-  const recentSearches = ['Dua Lipa', 'Justin Bieber', 'Chill Vibes'];
+  const trendingSearches = ['Pop', 'Rock', 'Hip-Hop', 'R&B'];
+  const genres = Array.from(new Set(allSongs.map(s => s.genre).filter(Boolean))).slice(0, 8);
   
   return (
     <div className="min-h-screen pb-32 pt-20">
@@ -53,60 +134,56 @@ export default function SearchPage() {
               placeholder="Search for songs, artists, albums, or genres..."
               className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50 text-lg"
             />
+            {searching && (
+              <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 animate-spin text-muted-foreground" />
+            )}
           </div>
         </div>
         
-        {!searchQuery ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+        ) : !searchQuery ? (
           <div className="space-y-12">
-            {/* Trending Searches */}
-            <section>
-              <div className="flex items-center gap-3 mb-6">
-                <TrendingUp className="w-6 h-6 text-primary" />
-                <h2 className="text-2xl font-bold">Trending Searches</h2>
-              </div>
-              
-              <div className="flex flex-wrap gap-3">
-                {trendingSearches.map((search) => (
-                  <button
-                    key={search}
-                    onClick={() => handleSearch(search)}
-                    className="px-6 py-3 glass-card rounded-full hover:bg-white/10 transition-colors font-medium"
-                  >
-                    {search}
-                  </button>
-                ))}
-              </div>
-            </section>
-            
-            {/* Recent Searches */}
-            <section>
-              <div className="flex items-center gap-3 mb-6">
-                <Clock className="w-6 h-6 text-muted-foreground" />
-                <h2 className="text-2xl font-bold">Recent Searches</h2>
-              </div>
-              
-              <div className="flex flex-wrap gap-3">
-                {recentSearches.map((search) => (
-                  <button
-                    key={search}
-                    onClick={() => handleSearch(search)}
-                    className="px-6 py-3 glass-card rounded-full hover:bg-white/10 transition-colors"
-                  >
-                    {search}
-                  </button>
-                ))}
-              </div>
-            </section>
+            {/* Browse by Genre */}
+            {genres.length > 0 && (
+              <section>
+                <div className="flex items-center gap-3 mb-6">
+                  <TrendingUp className="w-6 h-6 text-primary" />
+                  <h2 className="text-2xl font-bold">Browse by Genre</h2>
+                </div>
+                
+                <div className="flex flex-wrap gap-3">
+                  {genres.map((genre) => (
+                    <button
+                      key={genre}
+                      onClick={() => handleSearch(genre)}
+                      className="px-6 py-3 glass-card rounded-full hover:bg-white/10 transition-colors font-medium"
+                    >
+                      {genre}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
             
             {/* Browse All */}
             <section>
               <h2 className="text-2xl font-bold mb-6">Browse All</h2>
               
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                {mockSongs.map((song) => (
-                  <SongCard key={song.id} song={song} />
-                ))}
-              </div>
+              {allSongs.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {allSongs.map((song) => (
+                    <SongCard key={song.id} song={song} />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12 glass-card rounded-xl">
+                  <Music className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                  <p className="text-muted-foreground">No songs available yet</p>
+                </div>
+              )}
             </section>
           </div>
         ) : (

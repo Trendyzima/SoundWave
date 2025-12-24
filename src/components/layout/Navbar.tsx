@@ -1,17 +1,24 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, Library, User, Sparkles, Menu } from 'lucide-react';
-import { useAuthStore } from '../../stores/authStore';
+import { Home, Search, Library, User, Sparkles, Menu, Upload } from 'lucide-react';
+import { useAuth } from '../../stores/authStore';
+import { authService } from '../../lib/auth';
 import { useState } from 'react';
 
 export default function Navbar() {
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, isAuthenticated, logout } = useAuth();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
+  const handleLogout = async () => {
+    await authService.signOut();
+    logout();
+  };
   
   const navItems = [
     { to: '/', icon: Home, label: 'Home' },
     { to: '/search', icon: Search, label: 'Search' },
     { to: '/library', icon: Library, label: 'Library' },
+    { to: '/upload', icon: Upload, label: 'Upload' },
     { to: '/ai-assistant', icon: Sparkles, label: 'AI Assistant' },
   ];
   
@@ -63,7 +70,7 @@ export default function Navbar() {
                 <span className="text-sm font-medium">{user.username}</span>
               </Link>
               <button
-                onClick={logout}
+                onClick={handleLogout}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
                 Logout
@@ -122,7 +129,7 @@ export default function Navbar() {
                 </Link>
                 <button
                   onClick={() => {
-                    logout();
+                    handleLogout();
                     setMobileMenuOpen(false);
                   }}
                   className="w-full text-left px-4 py-3 text-muted-foreground hover:text-foreground transition-colors"

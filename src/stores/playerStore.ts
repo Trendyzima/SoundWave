@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Song } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface PlayerState {
   currentSong: Song | null;
@@ -24,16 +25,28 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentTime: 0,
   volume: 0.7,
   
-  play: (song) => {
+  play: async (song) => {
     set({ currentSong: song, isPlaying: true, currentTime: 0 });
-    // Add to listening history
-    const history = JSON.parse(localStorage.getItem('listeningHistory') || '[]');
-    history.push({
-      songId: song.id,
-      playedAt: new Date().toISOString(),
-      duration: 0,
-    });
-    localStorage.setItem('listeningHistory', JSON.stringify(history));
+    
+    // Track play in listening history (if user is logged in)
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('listening_history').insert({
+          user_id: user.id,
+          song_id: song.id,
+          duration_listened: 0,
+        });
+        
+        // Update play count
+        await supabase
+          .from('songs')
+          .update({ plays: song.plays + 1 })
+          .eq('id', song.id);
+      }
+    } catch (error) {
+      console.error('Error tracking play:', error);
+    }
   },
   
   pause: () => set({ isPlaying: false }),
@@ -50,7 +63,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const { queue } = get();
     if (queue.length > 0) {
       const [nextSong, ...restQueue] = queue;
-      set({ currentSong: nextSong, queue: restQueue, isPlaying: true, currentTime: 0 });
+      get().play(nextSong);
+      set({ queue: restQueue });
     }
   },
   

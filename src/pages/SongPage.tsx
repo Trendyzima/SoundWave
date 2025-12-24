@@ -1,40 +1,254 @@
 import { useParams, Navigate } from 'react-router-dom';
-import { mockSongs, mockComments } from '../constants/mockData';
-import { Play, Heart, Share2, MoreHorizontal, MessageCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { Song, Comment as CommentType } from '../types';
+import { Play, Heart, Share2, MoreHorizontal, MessageCircle, Loader2 } from 'lucide-react';
 import { usePlayerStore } from '../stores/playerStore';
 import { formatNumber, formatDate, formatDuration } from '../lib/utils';
 import Comment from '../components/features/Comment';
-import { useState } from 'react';
-import { useAuthStore } from '../stores/authStore';
+import { useAuth } from '../stores/authStore';
 
 export default function SongPage() {
   const { id } = useParams();
-  const { user } = useAuthStore();
-  const song = mockSongs.find((s) => s.id === id);
+  const { user } = useAuth();
+  const [song, setSong] = useState<Song | null>(null);
+  const [comments, setComments] = useState<CommentType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isLiked, setIsLiked] = useState(false);
   const { play, currentSong, isPlaying, togglePlay } = usePlayerStore();
   const [newComment, setNewComment] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+  
+  useEffect(() => {
+    if (id) {
+      fetchSongData();
+    }
+  }, [id]);
+  
+  const fetchSongData = async () => {
+    try {
+      // Fetch song
+      const { data: songData, error: songError } = await supabase
+        .from('songs')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      if (songError) throw songError;
+      
+      const mappedSong: Song = {
+        id: songData.id,
+        title: songData.title,
+        artist: songData.artist,
+        album: songData.album || '',
+        coverUrl: songData.cover_url || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=400&fit=crop',
+        duration: songData.duration,
+        audioUrl: songData.audio_url,
+        plays: songData.plays,
+        likes: songData.likes,
+        releaseDate: songData.release_date || '',
+        genre: songData.genre || '',
+      };
+      
+      setSong(mappedSong);
+      
+      // Fetch comments with user profiles
+      const { data: commentsData, error: commentsError } = await supabase
+        .from('comments')
+        .select(`
+          *,
+          user_profiles (username, email)
+        `)
+        .eq('song_id', id)
+        .is('parent_id', null)
+        .order('created_at', { ascending: false });
+      
+      if (commentsError) throw commentsError;
+      
+      // Fetch replies for each comment
+      const commentsWithReplies = await Promise.all(
+        (commentsData || []).map(async (comment: any) => {
+          const { data: repliesData } = await supabase
+            .from('comments')
+            .select(`
+              *,
+              user_profiles (username, email)
+            `)
+            .eq('parent_id', comment.id)
+            .order('created_at', { ascending: true });
+          
+          const replies = (repliesData || []).map((reply: any) => ({
+            id: reply.id,
+            songId: reply.song_id,
+            userId: reply.user_id,
+            username: reply.user_profiles?.username || 'User',
+            userAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(reply.user_profiles?.username || 'User')}&background=random`,
+            content: reply.content,
+            timestamp: reply.created_at,
+            likes: reply.likes,
+            replies: [],
+          }));
+          
+          return {
+            id: comment.id,
+            songId: comment.song_id,
+            userId: comment.user_id,
+            username: comment.user_profiles?.username || 'User',
+            userAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.user_profiles?.username || 'User')}&background=random`,
+            content: comment.content,
+            timestamp: comment.created_at,
+            likes: comment.likes,
+            replies,
+          };
+        })
+      );
+      
+      setComments(commentsWithReplies);
+      
+      // Check if user liked this song
+      if (user) {
+        const { data: likeData } = await supabase
+          .from('likes')
+          .select('id')
+          .eq('song_id', id)
+          .eq('user_id', user.id)
+          .single();
+        
+        setIsLiked(!!likeData);
+      }
+      
+    } catch (error) {
+      console.error('Error fetching song data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handlePlayToggle = () => {
+    if (!song) return;
+    
+    const isCurrentSong = currentSong?.id === song.id;
+    if (isCurrentSong) {
+      togglePlay();
+    } else {
+      play(song);
+      
+      // Track play in listening history
+      if (user) {
+        supabase
+          .from('listening_history')
+          .insert({
+            user_id: user.id,
+            song_id: song.id,
+            duration_listened: 0,
+          })
+          .then(() => {
+            // Update play count
+            supabase
+              .from('songs')
+              .update({ plays: song.plays + 1 })
+              .eq('id', song.id);
+          });
+      }
+    }
+  };
+  
+  const handleLikeToggle = async () => {
+    if (!user || !song) return;
+    
+    try {
+      if (isLiked) {
+        // Unlike
+        await supabase
+          .from('likes')
+          .delete()
+          .eq('song_id', song.id)
+          .eq('user_id', user.id);
+        
+        await supabase
+          .from('songs')
+          .update({ likes: Math.max(0, song.likes - 1) })
+          .eq('id', song.id);
+        
+        setIsLiked(false);
+        setSong({ ...song, likes: Math.max(0, song.likes - 1) });
+      } else {
+        // Like
+        await supabase
+          .from('likes')
+          .insert({
+            song_id: song.id,
+            user_id: user.id,
+          });
+        
+        await supabase
+          .from('songs')
+          .update({ likes: song.likes + 1 })
+          .eq('id', song.id);
+        
+        setIsLiked(true);
+        setSong({ ...song, likes: song.likes + 1 });
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error);
+    }
+  };
+  
+  const handleCommentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!newComment.trim() || !user || !song) return;
+    
+    setSubmittingComment(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .insert({
+          song_id: song.id,
+          user_id: user.id,
+          content: newComment.trim(),
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      // Add comment to local state
+      const newCommentObj: CommentType = {
+        id: data.id,
+        songId: song.id,
+        userId: user.id,
+        username: user.username,
+        userAvatar: user.avatarUrl,
+        content: newComment.trim(),
+        timestamp: data.created_at,
+        likes: 0,
+        replies: [],
+      };
+      
+      setComments([newCommentObj, ...comments]);
+      setNewComment('');
+    } catch (error) {
+      console.error('Error posting comment:', error);
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center pt-20">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
   
   if (!song) {
     return <Navigate to="/" />;
   }
   
   const isCurrentSong = currentSong?.id === song.id;
-  const songComments = mockComments.filter((c) => c.songId === song.id);
-  
-  const handlePlayToggle = () => {
-    if (isCurrentSong) {
-      togglePlay();
-    } else {
-      play(song);
-    }
-  };
-  
-  const handleCommentSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Mock comment submission
-    console.log('New comment:', newComment);
-    setNewComment('');
-  };
   
   return (
     <div className="min-h-screen pb-32 pt-20">
@@ -62,9 +276,11 @@ export default function SongPage() {
             
             {/* Song Info */}
             <div className="flex-1 min-w-0 space-y-4">
-              <div className="inline-block px-3 py-1 glass-card rounded-full text-sm font-semibold">
-                {song.genre}
-              </div>
+              {song.genre && (
+                <div className="inline-block px-3 py-1 glass-card rounded-full text-sm font-semibold">
+                  {song.genre}
+                </div>
+              )}
               
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight">
                 {song.title}
@@ -72,10 +288,18 @@ export default function SongPage() {
               
               <div className="flex flex-wrap items-center gap-4 text-lg">
                 <span className="font-semibold">{song.artist}</span>
-                <span className="text-muted-foreground">•</span>
-                <span className="text-muted-foreground">{song.album}</span>
-                <span className="text-muted-foreground">•</span>
-                <span className="text-muted-foreground">{formatDate(song.releaseDate)}</span>
+                {song.album && (
+                  <>
+                    <span className="text-muted-foreground">•</span>
+                    <span className="text-muted-foreground">{song.album}</span>
+                  </>
+                )}
+                {song.releaseDate && (
+                  <>
+                    <span className="text-muted-foreground">•</span>
+                    <span className="text-muted-foreground">{formatDate(song.releaseDate)}</span>
+                  </>
+                )}
               </div>
               
               <div className="flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
@@ -94,9 +318,14 @@ export default function SongPage() {
                   {isPlaying && isCurrentSong ? 'Playing' : 'Play'}
                 </button>
                 
-                <button className="px-6 py-3 glass-card rounded-full hover:bg-white/10 transition-colors flex items-center gap-2">
-                  <Heart className="w-5 h-5" />
-                  <span className="font-semibold">Like</span>
+                <button
+                  onClick={handleLikeToggle}
+                  className={`px-6 py-3 glass-card rounded-full hover:bg-white/10 transition-colors flex items-center gap-2 ${
+                    isLiked ? 'text-primary' : ''
+                  }`}
+                >
+                  <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
+                  <span className="font-semibold">{isLiked ? 'Liked' : 'Like'}</span>
                 </button>
                 
                 <button className="px-6 py-3 glass-card rounded-full hover:bg-white/10 transition-colors flex items-center gap-2">
@@ -119,46 +348,49 @@ export default function SongPage() {
           <div className="flex items-center gap-3 mb-6">
             <MessageCircle className="w-6 h-6 text-primary" />
             <h2 className="text-2xl sm:text-3xl font-bold">Community Reactions</h2>
-            <span className="text-muted-foreground">({songComments.length})</span>
+            <span className="text-muted-foreground">({comments.length})</span>
           </div>
           
           {/* Comment Input */}
-          <form onSubmit={handleCommentSubmit} className="glass-card p-4 rounded-xl mb-8">
-            <div className="flex gap-3">
-              <img
-                src={user?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop'}
-                alt="Your avatar"
-                className="w-10 h-10 rounded-full object-cover flex-shrink-0"
-              />
-              <div className="flex-1">
-                <textarea
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="Share your thoughts about this song..."
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-                  rows={3}
+          {user && (
+            <form onSubmit={handleCommentSubmit} className="glass-card p-4 rounded-xl mb-8">
+              <div className="flex gap-3">
+                <img
+                  src={user.avatarUrl}
+                  alt="Your avatar"
+                  className="w-10 h-10 rounded-full object-cover flex-shrink-0"
                 />
-                <div className="flex justify-end mt-3">
-                  <button
-                    type="submit"
-                    disabled={!newComment.trim()}
-                    className="px-6 py-2 bg-gradient-primary rounded-lg font-semibold hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Post Comment
-                  </button>
+                <div className="flex-1">
+                  <textarea
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="Share your thoughts about this song..."
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                    rows={3}
+                  />
+                  <div className="flex justify-end mt-3">
+                    <button
+                      type="submit"
+                      disabled={!newComment.trim() || submittingComment}
+                      className="px-6 py-2 bg-gradient-primary rounded-lg font-semibold hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {submittingComment && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {submittingComment ? 'Posting...' : 'Post Comment'}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          </form>
+            </form>
+          )}
           
           {/* Comments List */}
           <div className="space-y-6">
-            {songComments.map((comment) => (
+            {comments.map((comment) => (
               <Comment key={comment.id} comment={comment} />
             ))}
           </div>
           
-          {songComments.length === 0 && (
+          {comments.length === 0 && (
             <div className="text-center py-12">
               <MessageCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
               <p className="text-muted-foreground">No comments yet. Be the first to share your thoughts!</p>

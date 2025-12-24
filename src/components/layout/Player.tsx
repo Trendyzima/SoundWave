@@ -1,32 +1,80 @@
 import { Play, Pause, SkipBack, SkipForward, Volume2, Heart, ListMusic } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { formatDuration } from '../../lib/utils';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export default function Player() {
-  const { currentSong, isPlaying, currentTime, volume, togglePlay, playNext, playPrevious, setCurrentTime, setVolume } = usePlayerStore();
+  const { currentSong, isPlaying, currentTime, volume, togglePlay, playNext, playPrevious, setCurrentTime, setVolume, pause } = usePlayerStore();
+  const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
+  const [isReady, setIsReady] = useState(false);
   
+  // Load audio when song changes
   useEffect(() => {
-    if (isPlaying) {
-      const interval = setInterval(() => {
-        setCurrentTime(currentTime + 1);
-      }, 1000);
-      return () => clearInterval(interval);
+    if (currentSong && audioRef.current) {
+      audioRef.current.src = currentSong.audioUrl;
+      audioRef.current.load();
+      setIsReady(false);
     }
-  }, [isPlaying, currentTime, setCurrentTime]);
+  }, [currentSong]);
+  
+  // Handle play/pause
+  useEffect(() => {
+    if (!audioRef.current || !isReady) return;
+    
+    if (isPlaying) {
+      audioRef.current.play().catch((error) => {
+        console.error('Error playing audio:', error);
+        pause();
+      });
+    } else {
+      audioRef.current.pause();
+    }
+  }, [isPlaying, isReady, pause]);
+  
+  // Update volume
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+  
+  // Sync current time
+  useEffect(() => {
+    if (audioRef.current && Math.abs(audioRef.current.currentTime - currentTime) > 1) {
+      audioRef.current.currentTime = currentTime;
+    }
+  }, [currentTime]);
+  
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(Math.floor(audioRef.current.currentTime));
+    }
+  };
+  
+  const handleEnded = () => {
+    playNext();
+  };
+  
+  const handleCanPlay = () => {
+    setIsReady(true);
+    if (isPlaying && audioRef.current) {
+      audioRef.current.play().catch(console.error);
+    }
+  };
   
   if (!currentSong) return null;
   
-  const progress = (currentTime / currentSong.duration) * 100;
+  const progress = currentSong.duration > 0 ? (currentTime / currentSong.duration) * 100 : 0;
   
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!progressRef.current) return;
+    if (!progressRef.current || !currentSong) return;
     const rect = progressRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const percentage = x / rect.width;
-    setCurrentTime(Math.floor(percentage * currentSong.duration));
+    const newTime = Math.floor(percentage * currentSong.duration);
+    setCurrentTime(newTime);
   };
   
   const handleVolumeClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -38,96 +86,110 @@ export default function Player() {
   };
   
   return (
-    <div className="fixed bottom-0 left-0 right-0 h-24 glass-card border-t border-white/10 z-50">
-      <div className="h-full max-w-screen-2xl mx-auto px-4 sm:px-6 flex items-center gap-4 sm:gap-6">
-        {/* Song Info */}
-        <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0 sm:flex-initial sm:w-80">
-          <img
-            src={currentSong.coverUrl}
-            alt={currentSong.title}
-            className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg object-cover flex-shrink-0"
-          />
-          <div className="min-w-0 flex-1">
-            <h4 className="text-sm sm:text-base font-semibold text-foreground truncate">{currentSong.title}</h4>
-            <p className="text-xs sm:text-sm text-muted-foreground truncate">{currentSong.artist}</p>
-          </div>
-          <button className="hidden sm:block text-muted-foreground hover:text-primary transition-colors flex-shrink-0">
-            <Heart className="w-5 h-5" />
-          </button>
-        </div>
-        
-        {/* Controls */}
-        <div className="hidden sm:flex flex-col items-center gap-2 flex-1 max-w-2xl">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={playPrevious}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <SkipBack className="w-5 h-5" />
-            </button>
-            <button
-              onClick={togglePlay}
-              className="w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center hover:scale-105 transition-transform"
-            >
-              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
-            </button>
-            <button
-              onClick={playNext}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <SkipForward className="w-5 h-5" />
+    <>
+      {/* Hidden Audio Element */}
+      <audio
+        ref={audioRef}
+        onTimeUpdate={handleTimeUpdate}
+        onEnded={handleEnded}
+        onCanPlay={handleCanPlay}
+        preload="auto"
+      />
+      
+      {/* Player UI */}
+      <div className="fixed bottom-0 left-0 right-0 h-24 glass-card border-t border-white/10 z-50">
+        <div className="h-full max-w-screen-2xl mx-auto px-4 sm:px-6 flex items-center gap-4 sm:gap-6">
+          {/* Song Info */}
+          <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0 sm:flex-initial sm:w-80">
+            <img
+              src={currentSong.coverUrl}
+              alt={currentSong.title}
+              className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg object-cover flex-shrink-0"
+            />
+            <div className="min-w-0 flex-1">
+              <h4 className="text-sm sm:text-base font-semibold text-foreground truncate">{currentSong.title}</h4>
+              <p className="text-xs sm:text-sm text-muted-foreground truncate">{currentSong.artist}</p>
+            </div>
+            <button className="hidden sm:block text-muted-foreground hover:text-primary transition-colors flex-shrink-0">
+              <Heart className="w-5 h-5" />
             </button>
           </div>
           
-          {/* Progress Bar */}
-          <div className="w-full flex items-center gap-2">
-            <span className="text-xs text-muted-foreground w-10 text-right">
-              {formatDuration(currentTime)}
-            </span>
+          {/* Controls */}
+          <div className="hidden sm:flex flex-col items-center gap-2 flex-1 max-w-2xl">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={playPrevious}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <SkipBack className="w-5 h-5" />
+              </button>
+              <button
+                onClick={togglePlay}
+                disabled={!isReady}
+                className="w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+              </button>
+              <button
+                onClick={playNext}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <SkipForward className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Progress Bar */}
+            <div className="w-full flex items-center gap-2">
+              <span className="text-xs text-muted-foreground w-10 text-right">
+                {formatDuration(currentTime)}
+              </span>
+              <div
+                ref={progressRef}
+                onClick={handleProgressClick}
+                className="flex-1 h-1 bg-white/20 rounded-full cursor-pointer group"
+              >
+                <div
+                  className="h-full bg-gradient-primary rounded-full relative"
+                  style={{ width: `${progress}%` }}
+                >
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+              </div>
+              <span className="text-xs text-muted-foreground w-10">
+                {formatDuration(currentSong.duration)}
+              </span>
+            </div>
+          </div>
+          
+          {/* Mobile Play Button */}
+          <button
+            onClick={togglePlay}
+            disabled={!isReady}
+            className="sm:hidden w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center flex-shrink-0 disabled:opacity-50"
+          >
+            {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+          </button>
+          
+          {/* Volume & Queue */}
+          <div className="hidden lg:flex items-center gap-3 w-48">
+            <ListMusic className="w-5 h-5 text-muted-foreground" />
+            <Volume2 className="w-5 h-5 text-muted-foreground" />
             <div
-              ref={progressRef}
-              onClick={handleProgressClick}
+              ref={volumeRef}
+              onClick={handleVolumeClick}
               className="flex-1 h-1 bg-white/20 rounded-full cursor-pointer group"
             >
               <div
                 className="h-full bg-gradient-primary rounded-full relative"
-                style={{ width: `${progress}%` }}
+                style={{ width: `${volume * 100}%` }}
               >
                 <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
             </div>
-            <span className="text-xs text-muted-foreground w-10">
-              {formatDuration(currentSong.duration)}
-            </span>
-          </div>
-        </div>
-        
-        {/* Mobile Play Button */}
-        <button
-          onClick={togglePlay}
-          className="sm:hidden w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center flex-shrink-0"
-        >
-          {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
-        </button>
-        
-        {/* Volume & Queue */}
-        <div className="hidden lg:flex items-center gap-3 w-48">
-          <ListMusic className="w-5 h-5 text-muted-foreground" />
-          <Volume2 className="w-5 h-5 text-muted-foreground" />
-          <div
-            ref={volumeRef}
-            onClick={handleVolumeClick}
-            className="flex-1 h-1 bg-white/20 rounded-full cursor-pointer group"
-          >
-            <div
-              className="h-full bg-gradient-primary rounded-full relative"
-              style={{ width: `${volume * 100}%` }}
-            >
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
