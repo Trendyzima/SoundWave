@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { Podcast, User } from '../types';
 import { 
   Loader2, Radio, Users, Heart, Share2, MessageCircle, 
-  StopCircle, Play, Pause, Volume2, VolumeX, Mic 
+  StopCircle, Play, Pause, Volume2, VolumeX, Mic, Trash2, MoreVertical 
 } from 'lucide-react';
 
 export default function PodcastPlayerPage() {
@@ -22,6 +22,8 @@ export default function PodcastPlayerPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [deleting, setDeleting] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -346,6 +348,50 @@ export default function PodcastPlayerPage() {
     setIsMuted(!isMuted);
   };
   
+  const handleDeletePodcast = async () => {
+    if (!podcast || !isHost) return;
+    
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${podcast.title}"? This action cannot be undone.`
+    );
+    
+    if (!confirmed) return;
+    
+    setDeleting(true);
+    try {
+      // Delete audio file if exists
+      if (podcast.audioUrl) {
+        const audioPath = podcast.audioUrl.split('/').pop();
+        if (audioPath) {
+          await supabase.storage.from('audio').remove([audioPath]);
+        }
+      }
+      
+      // Delete cover if exists
+      if (podcast.coverUrl && !podcast.coverUrl.includes('unsplash')) {
+        const coverPath = podcast.coverUrl.split('/').pop();
+        if (coverPath) {
+          await supabase.storage.from('covers').remove([coverPath]);
+        }
+      }
+      
+      // Delete podcast from database
+      const { error } = await supabase
+        .from('podcasts')
+        .delete()
+        .eq('id', podcast.id);
+      
+      if (error) throw error;
+      
+      navigate('/podcasts');
+    } catch (error) {
+      console.error('Error deleting podcast:', error);
+      alert('Failed to delete podcast. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+  
   const formatRecordingTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -443,6 +489,41 @@ export default function PodcastPlayerPage() {
                     {podcast.category}
                   </p>
                 </div>
+                {isHost && !podcast.isLive && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowMenu(!showMenu)}
+                      className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                    >
+                      <MoreVertical className="w-5 h-5" />
+                    </button>
+                    {showMenu && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-10"
+                          onClick={() => setShowMenu(false)}
+                        />
+                        <div className="absolute right-0 mt-2 w-48 glass-card rounded-lg shadow-lg z-20 overflow-hidden">
+                          <button
+                            onClick={() => {
+                              setShowMenu(false);
+                              handleDeletePodcast();
+                            }}
+                            disabled={deleting}
+                            className="w-full px-4 py-3 hover:bg-red-500/10 hover:text-red-500 transition-colors flex items-center gap-3 text-left disabled:opacity-50"
+                          >
+                            {deleting ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                            {deleting ? 'Deleting...' : 'Delete Podcast'}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
               
               <div className="flex items-center gap-6 mb-4 text-sm">

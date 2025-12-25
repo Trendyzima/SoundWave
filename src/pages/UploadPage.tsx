@@ -1,19 +1,25 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../stores/authStore';
-import { Navigate, useNavigate } from 'react-router-dom';
-import { Upload, Music, Image as ImageIcon, Loader2, CheckCircle2, Hash } from 'lucide-react';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Upload, Music, Image as ImageIcon, Loader2, CheckCircle2, Hash, Copy } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export default function UploadPage() {
   const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get('edit');
+  const remixId = searchParams.get('remix');
   const audioInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   
   const [uploading, setUploading] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const isEditMode = !!editId;
+  const isRemixMode = !!remixId;
   
   const [formData, setFormData] = useState({
     title: '',
@@ -27,6 +33,53 @@ export default function UploadPage() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string>('');
+  const [existingAudioUrl, setExistingAudioUrl] = useState<string>('');
+  const [existingCoverUrl, setExistingCoverUrl] = useState<string>('');
+  
+  useEffect(() => {
+    if ((editId || remixId) && user) {
+      loadSongData(editId || remixId || '');
+    }
+  }, [editId, remixId, user]);
+  
+  const loadSongData = async (songId: string) => {
+    setLoadingEdit(true);
+    try {
+      const { data, error } = await supabase
+        .from('songs')
+        .select('*')
+        .eq('id', songId)
+        .single();
+      
+      if (error) throw error;
+      
+      // Check ownership for edit mode
+      if (editId && data.user_id !== user?.id) {
+        setError('You can only edit your own songs');
+        return;
+      }
+      
+      setFormData({
+        title: remixId ? `${data.title} (Remix)` : data.title,
+        artist: user?.username || data.artist,
+        album: data.album || '',
+        genre: data.genre || '',
+        releaseDate: data.release_date || '',
+        description: remixId 
+          ? `Remix of "${data.title}" by ${data.artist}\n\n${data.description || ''}`
+          : data.description || '',
+      });
+      
+      setExistingAudioUrl(data.audio_url);
+      setExistingCoverUrl(data.cover_url);
+      setCoverPreview(data.cover_url);
+    } catch (err: any) {
+      console.error('Error loading song:', err);
+      setError(err.message || 'Failed to load song data');
+    } finally {
+      setLoadingEdit(false);
+    }
+  };
   
   if (!isAuthenticated) {
     return <Navigate to="/auth" />;
@@ -77,7 +130,7 @@ export default function UploadPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!audioFile) {
+    if (!audioFile && !existingAudioUrl) {
       setError('Please select an audio file');
       return;
     }
@@ -92,29 +145,43 @@ export default function UploadPage() {
     setSuccess(false);
     
     try {
-      // Get audio duration
-      setUploadProgress('Analyzing audio file...');
-      const duration = await getAudioDuration(audioFile);
+      let audioUrl = existingAudioUrl;
+      let duration = 0;
       
-      // Upload audio file
-      setUploadProgress('Uploading audio file...');
-      const audioFileName = `${Date.now()}_${audioFile.name}`;
-      const { data: audioData, error: audioError } = await supabase.storage
-        .from('audio')
-        .upload(audioFileName, audioFile, {
-          cacheControl: '3600',
-          upsert: false,
-        });
+      // Upload new audio if provided
+      if (audioFile) {
+        setUploadProgress('Analyzing audio file...');
+        duration = await getAudioDuration(audioFile);
+        
+        setUploadProgress('Uploading audio file...');
+        const audioFileName = `${Date.now()}_${audioFile.name}`;
+        const { data: audioData, error: audioError } = await supabase.storage
+          .from('audio')
+          .upload(audioFileName, audioFile, {
+            cacheControl: '3600',
+            upsert: false,
+          });
+        
+        if (audioError) throw audioError;
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from('audio')
+          .getPublicUrl(audioFileName);
+        audioUrl = publicUrl;
+      } else if (existingAudioUrl) {
+        // Get duration from existing song for edit mode
+        if (editId) {
+          const { data } = await supabase
+            .from('songs')
+            .select('duration')
+            .eq('id', editId)
+            .single();
+          duration = data?.duration || 0;
+        }
+      }
       
-      if (audioError) throw audioError;
-      
-      // Get audio public URL
-      const { data: { publicUrl: audioUrl } } = supabase.storage
-        .from('audio')
-        .getPublicUrl(audioFileName);
-      
-      // Upload cover image if provided
-      let coverUrl = null;
+      // Upload new cover if provided
+      let coverUrl = existingCoverUrl;
       if (coverFile) {
         setUploadProgress('Uploading cover image...');
         const coverFileName = `${Date.now()}_${coverFile.name}`;
@@ -133,62 +200,108 @@ export default function UploadPage() {
         coverUrl = publicUrl;
       }
       
-      // Save song metadata to database
-      setUploadProgress('Saving song details...');
-      const { data: songData, error: dbError } = await supabase
-        .from('songs')
-        .insert({
-          user_id: user.id,
-          title: formData.title,
-          artist: formData.artist,
-          album: formData.album || null,
-          genre: formData.genre || null,
-          duration,
-          audio_url: audioUrl,
-          cover_url: coverUrl,
-          release_date: formData.releaseDate || null,
-          description: formData.description || null,
-        })
-        .select()
-        .single();
-      
-      if (dbError) throw dbError;
-      
-      // Process hashtags
-      const hashtags = extractHashtags(formData.description);
-      if (hashtags.length > 0) {
-        setUploadProgress('Processing hashtags...');
+      if (isEditMode && editId) {
+        // Update existing song
+        setUploadProgress('Updating song details...');
+        const { error: dbError } = await supabase
+          .from('songs')
+          .update({
+            title: formData.title,
+            artist: formData.artist,
+            album: formData.album || null,
+            genre: formData.genre || null,
+            cover_url: coverUrl,
+            release_date: formData.releaseDate || null,
+            description: formData.description || null,
+          })
+          .eq('id', editId);
         
-        for (const tag of hashtags) {
-          // Increment or create hashtag
-          await supabase.rpc('increment_hashtag_usage', { hashtag_tag: tag });
-          
-          // Get hashtag ID
-          const { data: hashtagData } = await supabase
-            .from('hashtags')
-            .select('id')
-            .eq('tag', tag)
-            .single();
-          
-          if (hashtagData) {
-            // Link song to hashtag
-            await supabase
-              .from('song_hashtags')
-              .insert({
+        if (dbError) throw dbError;
+        
+        // Update hashtags
+        await supabase.from('song_hashtags').delete().eq('song_id', editId);
+        
+        const hashtags = extractHashtags(formData.description);
+        if (hashtags.length > 0) {
+          setUploadProgress('Processing hashtags...');
+          for (const tag of hashtags) {
+            await supabase.rpc('increment_hashtag_usage', { hashtag_tag: tag });
+            const { data: hashtagData } = await supabase
+              .from('hashtags')
+              .select('id')
+              .eq('tag', tag)
+              .single();
+            
+            if (hashtagData) {
+              await supabase.from('song_hashtags').insert({
+                song_id: editId,
+                hashtag_id: hashtagData.id,
+              });
+            }
+          }
+        }
+        
+        setSuccess(true);
+        setUploadProgress('Song updated successfully!');
+        setTimeout(() => navigate(`/song/${editId}`), 2000);
+        
+      } else {
+        // Create new song
+        setUploadProgress('Saving song details...');
+        const { data: songData, error: dbError } = await supabase
+          .from('songs')
+          .insert({
+            user_id: user.id,
+            title: formData.title,
+            artist: formData.artist,
+            album: formData.album || null,
+            genre: formData.genre || null,
+            duration,
+            audio_url: audioUrl,
+            cover_url: coverUrl,
+            release_date: formData.releaseDate || null,
+            description: formData.description || null,
+          })
+          .select()
+          .single();
+        
+        if (dbError) throw dbError;
+        
+        // Process hashtags
+        const hashtags = extractHashtags(formData.description);
+        if (hashtags.length > 0) {
+          setUploadProgress('Processing hashtags...');
+          for (const tag of hashtags) {
+            await supabase.rpc('increment_hashtag_usage', { hashtag_tag: tag });
+            const { data: hashtagData } = await supabase
+              .from('hashtags')
+              .select('id')
+              .eq('tag', tag)
+              .single();
+            
+            if (hashtagData) {
+              await supabase.from('song_hashtags').insert({
                 song_id: songData.id,
                 hashtag_id: hashtagData.id,
               });
+            }
           }
         }
+        
+        // If remix, create version record
+        if (remixId) {
+          await supabase.from('song_versions').insert({
+            original_song_id: remixId,
+            remix_song_id: songData.id,
+            created_by: user.id,
+            version_type: 'remix',
+          });
+        }
+        
+        setSuccess(true);
+        setUploadProgress(isRemixMode ? 'Remix created!' : 'Upload complete!');
+        setTimeout(() => navigate('/'), 2000);
       }
-      
-      setSuccess(true);
-      setUploadProgress('Upload complete!');
-      
-      // Reset form after 2 seconds
-      setTimeout(() => {
-        navigate('/');
-      }, 2000);
       
     } catch (err: any) {
       console.error('Upload error:', err);
@@ -201,20 +314,44 @@ export default function UploadPage() {
   
   const detectedHashtags = extractHashtags(formData.description);
   
+  if (loadingEdit) {
+    return (
+      <div className="min-h-screen flex items-center justify-center pt-20">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+  
   return (
     <div className="min-h-screen pb-32 pt-20">
       <div className="max-w-3xl mx-auto px-4 sm:px-6">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl sm:text-4xl font-bold mb-2">Upload Music</h1>
-          <p className="text-muted-foreground">Share your music with the world</p>
+          <h1 className="text-3xl sm:text-4xl font-bold mb-2 flex items-center gap-3">
+            {isEditMode && 'Edit Music'}
+            {isRemixMode && (
+              <>
+                <Copy className="w-8 h-8" />
+                Create Remix
+              </>
+            )}
+            {!isEditMode && !isRemixMode && 'Upload Music'}
+          </h1>
+          <p className="text-muted-foreground">
+            {isEditMode && 'Update your song details'}
+            {isRemixMode && 'Create your own version of this track'}
+            {!isEditMode && !isRemixMode && 'Share your music with the world'}
+          </p>
         </div>
         
         <div className="glass-card p-6 sm:p-8 rounded-2xl">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Audio File Upload */}
             <div>
-              <label className="block text-sm font-medium mb-3">Audio File *</label>
+              <label className="block text-sm font-medium mb-3">
+                Audio File {!isEditMode && '*'}
+                {isEditMode && existingAudioUrl && ' (Leave empty to keep current)'}
+              </label>
               <input
                 ref={audioInputRef}
                 type="file"
@@ -237,6 +374,11 @@ export default function UploadPage() {
                       <p className="text-sm text-muted-foreground">
                         {(audioFile.size / 1024 / 1024).toFixed(2)} MB
                       </p>
+                    </div>
+                  ) : existingAudioUrl ? (
+                    <div className="text-center">
+                      <p className="font-medium text-primary">Current audio file set</p>
+                      <p className="text-sm text-muted-foreground">Click to replace</p>
                     </div>
                   ) : (
                     <div className="text-center">
@@ -277,7 +419,7 @@ export default function UploadPage() {
                   )}
                   <div className="text-center">
                     <p className="font-medium text-foreground">
-                      {coverFile ? coverFile.name : 'Click to select cover image'}
+                      {coverFile ? coverFile.name : coverPreview ? 'Click to replace cover' : 'Click to select cover image'}
                     </p>
                     <p className="text-sm text-muted-foreground">JPG, PNG, or WEBP</p>
                   </div>
@@ -391,7 +533,7 @@ export default function UploadPage() {
             {success && (
               <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg text-green-500 text-sm flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5" />
-                <span>Song uploaded successfully! Redirecting...</span>
+                <span>{uploadProgress}</span>
               </div>
             )}
             
@@ -406,18 +548,32 @@ export default function UploadPage() {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={uploading || !audioFile}
+              disabled={uploading || (!audioFile && !existingAudioUrl)}
               className="w-full py-4 bg-gradient-primary rounded-lg font-semibold text-lg hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2"
             >
               {uploading ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  Uploading...
+                  {isEditMode ? 'Updating...' : isRemixMode ? 'Creating Remix...' : 'Uploading...'}
                 </>
               ) : (
                 <>
-                  <Upload className="w-5 h-5" />
-                  Upload Song
+                  {isEditMode ? (
+                    <>
+                      <CheckCircle2 className="w-5 h-5" />
+                      Update Song
+                    </>
+                  ) : isRemixMode ? (
+                    <>
+                      <Copy className="w-5 h-5" />
+                      Create Remix
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-5 h-5" />
+                      Upload Song
+                    </>
+                  )}
                 </>
               )}
             </button>

@@ -1,8 +1,8 @@
-import { useParams, Navigate } from 'react-router-dom';
+import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Song, Comment as CommentType } from '../types';
-import { Play, Heart, Share2, MoreHorizontal, MessageCircle, Loader2 } from 'lucide-react';
+import { Play, Heart, Share2, MoreHorizontal, MessageCircle, Loader2, Edit2, Trash2, Users, Copy } from 'lucide-react';
 import { usePlayerStore } from '../stores/playerStore';
 import { formatNumber, formatDate, formatDuration } from '../lib/utils';
 import Comment from '../components/features/Comment';
@@ -11,13 +11,19 @@ import { useAuth } from '../stores/authStore';
 export default function SongPage() {
   const { id } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [song, setSong] = useState<Song | null>(null);
+  const [songOwnerId, setSongOwnerId] = useState<string | null>(null);
   const [comments, setComments] = useState<CommentType[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLiked, setIsLiked] = useState(false);
   const { play, currentSong, isPlaying, togglePlay } = usePlayerStore();
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  
+  const isOwner = user?.id === songOwnerId;
   
   useEffect(() => {
     if (id) {
@@ -36,6 +42,8 @@ export default function SongPage() {
       
       if (songError) throw songError;
       
+      setSongOwnerId(songData.user_id);
+      
       const mappedSong: Song = {
         id: songData.id,
         title: songData.title,
@@ -48,6 +56,7 @@ export default function SongPage() {
         likes: songData.likes,
         releaseDate: songData.release_date || '',
         genre: songData.genre || '',
+        description: songData.description || '',
       };
       
       setSong(mappedSong);
@@ -236,6 +245,58 @@ export default function SongPage() {
     }
   };
   
+  const handleEdit = () => {
+    navigate(`/upload?edit=${id}`);
+  };
+  
+  const handleDelete = async () => {
+    if (!song || !isOwner) return;
+    
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${song.title}"? This action cannot be undone.`
+    );
+    
+    if (!confirmed) return;
+    
+    setDeleting(true);
+    try {
+      // Delete from storage
+      if (song.audioUrl) {
+        const audioPath = song.audioUrl.split('/').pop();
+        if (audioPath) {
+          await supabase.storage.from('audio').remove([audioPath]);
+        }
+      }
+      
+      if (song.coverUrl && !song.coverUrl.includes('unsplash')) {
+        const coverPath = song.coverUrl.split('/').pop();
+        if (coverPath) {
+          await supabase.storage.from('covers').remove([coverPath]);
+        }
+      }
+      
+      // Delete from database (cascade will handle related records)
+      const { error } = await supabase
+        .from('songs')
+        .delete()
+        .eq('id', song.id);
+      
+      if (error) throw error;
+      
+      navigate('/');
+    } catch (error) {
+      console.error('Error deleting song:', error);
+      alert('Failed to delete song. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+  
+  const handleRemix = () => {
+    // Navigate to upload page with remix parameter
+    navigate(`/upload?remix=${id}`);
+  };
+  
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center pt-20">
@@ -302,6 +363,10 @@ export default function SongPage() {
                 )}
               </div>
               
+              {song.description && (
+                <p className="text-muted-foreground">{song.description}</p>
+              )}
+              
               <div className="flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
                 <span>{formatNumber(song.plays)} plays</span>
                 <span>{formatNumber(song.likes)} likes</span>
@@ -328,14 +393,86 @@ export default function SongPage() {
                   <span className="font-semibold">{isLiked ? 'Liked' : 'Like'}</span>
                 </button>
                 
+                {!isOwner && (
+                  <button
+                    onClick={handleRemix}
+                    className="px-6 py-3 glass-card rounded-full hover:bg-white/10 transition-colors flex items-center gap-2"
+                  >
+                    <Copy className="w-5 h-5" />
+                    <span className="font-semibold">Remix</span>
+                  </button>
+                )}
+                
                 <button className="px-6 py-3 glass-card rounded-full hover:bg-white/10 transition-colors flex items-center gap-2">
                   <Share2 className="w-5 h-5" />
                   <span className="font-semibold">Share</span>
                 </button>
                 
-                <button className="p-3 glass-card rounded-full hover:bg-white/10 transition-colors">
-                  <MoreHorizontal className="w-5 h-5" />
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setShowMenu(!showMenu)}
+                    className="p-3 glass-card rounded-full hover:bg-white/10 transition-colors"
+                  >
+                    <MoreHorizontal className="w-5 h-5" />
+                  </button>
+                  
+                  {showMenu && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setShowMenu(false)}
+                      />
+                      <div className="absolute right-0 mt-2 w-48 glass-card rounded-lg shadow-lg z-20 overflow-hidden">
+                        {isOwner ? (
+                          <>
+                            <button
+                              onClick={() => {
+                                setShowMenu(false);
+                                handleEdit();
+                              }}
+                              className="w-full px-4 py-3 hover:bg-white/10 transition-colors flex items-center gap-3 text-left"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                              Edit Song
+                            </button>
+                            <button
+                              onClick={() => {
+                                setShowMenu(false);
+                                handleDelete();
+                              }}
+                              disabled={deleting}
+                              className="w-full px-4 py-3 hover:bg-red-500/10 hover:text-red-500 transition-colors flex items-center gap-3 text-left disabled:opacity-50"
+                            >
+                              {deleting ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-4 h-4" />
+                              )}
+                              {deleting ? 'Deleting...' : 'Delete Song'}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => {
+                                setShowMenu(false);
+                                handleRemix();
+                              }}
+                              className="w-full px-4 py-3 hover:bg-white/10 transition-colors flex items-center gap-3 text-left"
+                            >
+                              <Copy className="w-4 h-4" />
+                              Create Remix
+                            </button>
+                            <button className="w-full px-4 py-3 hover:bg-white/10 transition-colors flex items-center gap-3 text-left">
+                              <Users className="w-4 h-4" />
+                              Request Collab
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>
