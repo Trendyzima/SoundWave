@@ -12,6 +12,7 @@ export interface Song {
   likes: number;
   description?: string;
   hashtags?: string[];
+  videoUrl?: string;
 }
 
 export interface Hashtag {
@@ -126,4 +127,124 @@ export interface StreamViewer {
   userId?: string;
   joinedAt: string;
   lastSeenAt: string;
+}
+
+export interface DJMix {
+  id: string;
+  userId: string;
+  title: string;
+  description?: string;
+  coverUrl?: string;
+  audioUrl: string;
+  duration: number;
+  genre?: string;
+  tracklist?: { title: string; artist: string; timestamp: number }[];
+  plays: number;
+  likes: number;
+  downloads: number;
+  createdAt: string;
+  updatedAt: string;
+  user?: User;
+}
+
+export interface Event {
+  id: string;
+  organizerId: string;
+  title: string;
+  description?: string;
+  coverUrl?: string;
+  eventType: string;
+  venueName?: string;
+  venueAddress?: string;
+  city?: string;
+  country?: string;
+  startDate: string;
+  endDate?: string;
+  ticketPrice: number;
+  totalTickets?: number;
+  availableTickets?: number;
+  isFree: boolean;
+  isOnline: boolean;
+  meetingLink?: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  organizer?: User;
+}
+
+export interface TicketPurchase {
+  id: string;
+  eventId: string;
+  userId: string;
+  quantity: number;
+  totalAmount: number;
+  paymentStatus: string;
+  ticketCode: string;
+  purchasedAt: string;
+  event?: Event;
+}
+
+export interface MusicVideo {
+  id: string;
+  userId: string;
+  songId?: string;
+  title: string;
+  description?: string;
+  videoUrl: string;
+  thumbnailUrl?: string;
+  duration: number;
+  views: number;
+  likes: number;
+  createdAt: string;
+  updatedAt: string;
+  user?: User;
+  song?: Song;
+}
+
+export interface Challenge {
+  id: string;
+  createdBy: string;
+  title: string;
+  description?: string;
+  coverUrl?: string;
+  challengeType: string;
+  rules?: any;
+  prizeDescription?: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  createdAt: string;
+  creator?: User;
+}
+
+export interface ChallengeSubmission {
+  id: string;
+  challengeId: string;
+  userId: string;
+  songId?: string;
+  videoUrl?: string;
+  description?: string;
+  votes: number;
+  createdAt: string;
+  user?: User;
+  song?: Song;
+}
+
+export interface Advertisement {
+  id: string;
+  title: string;
+  description?: string;
+  adType: string;
+  imageUrl?: string;
+  videoUrl?: string;
+  linkUrl?: string;
+  placement: string;
+  startDate?: string;
+  endDate?: string;
+  impressions: number;
+  clicks: number;
+  budget?: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
 }

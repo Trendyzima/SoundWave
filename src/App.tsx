@@ -19,6 +19,10 @@ import MessagesPage from './pages/MessagesPage';
 import PodcastsPage from './pages/PodcastsPage';
 import GoLivePage from './pages/GoLivePage';
 import PodcastPlayerPage from './pages/PodcastPlayerPage';
+import DJMixesPage from './pages/DJMixesPage';
+import EventsPage from './pages/EventsPage';
+import ChallengesPage from './pages/ChallengesPage';
+import AdminDashboard from './pages/AdminDashboard';
 
 export default function App() {
   const { login, logout, setLoading } = useAuthStore();
@@ -75,6 +79,10 @@ export default function App() {
           <Route path="/podcasts" element={<PodcastsPage />} />
           <Route path="/go-live" element={<GoLivePage />} />
           <Route path="/podcast/:id" element={<PodcastPlayerPage />} />
+          <Route path="/dj-mixes" element={<DJMixesPage />} />
+          <Route path="/events" element={<EventsPage />} />
+          <Route path="/challenges" element={<ChallengesPage />} />
+          <Route path="/admin" element={<AdminDashboard />} />
         </Routes>
         <BottomNav />
         <Player />
