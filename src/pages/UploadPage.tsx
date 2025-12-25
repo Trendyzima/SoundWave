@@ -18,6 +18,7 @@ export default function UploadPage() {
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [storageProvider, setStorageProvider] = useState<'supabase' | 'backblaze'>('supabase');
   const isEditMode = !!editId;
   const isRemixMode = !!remixId;
   
@@ -153,21 +154,39 @@ export default function UploadPage() {
         setUploadProgress('Analyzing audio file...');
         duration = await getAudioDuration(audioFile);
         
-        setUploadProgress('Uploading audio file...');
-        const audioFileName = `${Date.now()}_${audioFile.name}`;
-        const { data: audioData, error: audioError } = await supabase.storage
-          .from('audio')
-          .upload(audioFileName, audioFile, {
-            cacheControl: '3600',
-            upsert: false,
+        setUploadProgress(`Uploading audio file to ${storageProvider === 'backblaze' ? 'Backblaze' : 'Supabase'}...`);
+        
+        if (storageProvider === 'backblaze') {
+          // Upload to Backblaze via Edge Function
+          const formData = new FormData();
+          formData.append('file', audioFile);
+          formData.append('folder', 'audio');
+          
+          const { data, error } = await supabase.functions.invoke('upload-to-backblaze', {
+            body: formData,
           });
-        
-        if (audioError) throw audioError;
-        
-        const { data: { publicUrl } } = supabase.storage
-          .from('audio')
-          .getPublicUrl(audioFileName);
-        audioUrl = publicUrl;
+          
+          if (error) throw error;
+          if (!data.success) throw new Error(data.error || 'Backblaze upload failed');
+          
+          audioUrl = data.url;
+        } else {
+          // Upload to Supabase Storage
+          const audioFileName = `${Date.now()}_${audioFile.name}`;
+          const { data: audioData, error: audioError } = await supabase.storage
+            .from('audio')
+            .upload(audioFileName, audioFile, {
+              cacheControl: '3600',
+              upsert: false,
+            });
+          
+          if (audioError) throw audioError;
+          
+          const { data: { publicUrl } } = supabase.storage
+            .from('audio')
+            .getPublicUrl(audioFileName);
+          audioUrl = publicUrl;
+        }
       } else if (existingAudioUrl) {
         // Get duration from existing song for edit mode
         if (editId) {
@@ -183,21 +202,39 @@ export default function UploadPage() {
       // Upload new cover if provided
       let coverUrl = existingCoverUrl;
       if (coverFile) {
-        setUploadProgress('Uploading cover image...');
-        const coverFileName = `${Date.now()}_${coverFile.name}`;
-        const { data: coverData, error: coverError } = await supabase.storage
-          .from('covers')
-          .upload(coverFileName, coverFile, {
-            cacheControl: '3600',
-            upsert: false,
+        setUploadProgress(`Uploading cover image to ${storageProvider === 'backblaze' ? 'Backblaze' : 'Supabase'}...`);
+        
+        if (storageProvider === 'backblaze') {
+          // Upload to Backblaze via Edge Function
+          const formData = new FormData();
+          formData.append('file', coverFile);
+          formData.append('folder', 'covers');
+          
+          const { data, error } = await supabase.functions.invoke('upload-to-backblaze', {
+            body: formData,
           });
-        
-        if (coverError) throw coverError;
-        
-        const { data: { publicUrl } } = supabase.storage
-          .from('covers')
-          .getPublicUrl(coverFileName);
-        coverUrl = publicUrl;
+          
+          if (error) throw error;
+          if (!data.success) throw new Error(data.error || 'Backblaze upload failed');
+          
+          coverUrl = data.url;
+        } else {
+          // Upload to Supabase Storage
+          const coverFileName = `${Date.now()}_${coverFile.name}`;
+          const { data: coverData, error: coverError } = await supabase.storage
+            .from('covers')
+            .upload(coverFileName, coverFile, {
+              cacheControl: '3600',
+              upsert: false,
+            });
+          
+          if (coverError) throw coverError;
+          
+          const { data: { publicUrl } } = supabase.storage
+            .from('covers')
+            .getPublicUrl(coverFileName);
+          coverUrl = publicUrl;
+        }
       }
       
       if (isEditMode && editId) {
@@ -346,6 +383,43 @@ export default function UploadPage() {
         
         <div className="glass-card p-6 sm:p-8 rounded-2xl">
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Storage Provider Selection */}
+            {!isEditMode && (
+              <div>
+                <label className="block text-sm font-medium mb-3">Storage Provider</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setStorageProvider('supabase')}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      storageProvider === 'supabase'
+                        ? 'border-primary bg-primary/10'
+                        : 'border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    <div className="text-center">
+                      <p className="font-semibold mb-1">Supabase Storage</p>
+                      <p className="text-xs text-muted-foreground">Integrated cloud storage</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStorageProvider('backblaze')}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      storageProvider === 'backblaze'
+                        ? 'border-accent bg-accent/10'
+                        : 'border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    <div className="text-center">
+                      <p className="font-semibold mb-1">Backblaze B2</p>
+                      <p className="text-xs text-muted-foreground">Cost-effective cloud storage</p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+            
             {/* Audio File Upload */}
             <div>
               <label className="block text-sm font-medium mb-3">
