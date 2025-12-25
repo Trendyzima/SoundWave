@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { Podcast, User } from '../types';
 import { 
   Loader2, Radio, Users, Heart, Share2, MessageCircle, 
-  StopCircle, Play, Pause, Volume2, VolumeX 
+  StopCircle, Play, Pause, Volume2, VolumeX, Mic 
 } from 'lucide-react';
 
 export default function PodcastPlayerPage() {
@@ -20,31 +20,46 @@ export default function PodcastPlayerPage() {
   const [comments, setComments] = useState<any[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<number | null>(null);
   
   const isHost = user?.id === podcast?.userId;
   
   useEffect(() => {
     if (!authLoading && isAuthenticated && id) {
       fetchPodcast();
-      
-      if (podcast?.isLive) {
-        // Join as viewer
-        joinStream();
-        
-        // Poll for updates every 3 seconds
-        const interval = setInterval(() => {
-          updateViewerCount();
-          updateHeartbeat();
-        }, 3000);
-        
-        return () => {
-          clearInterval(interval);
-          leaveStream();
-        };
-      }
     }
-  }, [isAuthenticated, authLoading, id, podcast?.isLive]);
+  }, [isAuthenticated, authLoading, id]);
+  
+  useEffect(() => {
+    if (podcast?.isLive && isHost && !isRecording) {
+      // Auto-start recording for host when podcast is live
+      startRecording();
+    }
+    
+    if (podcast?.isLive) {
+      // Join as viewer
+      joinStream();
+      
+      // Poll for updates every 3 seconds
+      const interval = setInterval(() => {
+        updateViewerCount();
+        updateHeartbeat();
+      }, 3000);
+      
+      return () => {
+        clearInterval(interval);
+        leaveStream();
+        if (isRecording) {
+          stopRecording();
+        }
+      };
+    }
+  }, [podcast?.isLive, isHost]);
   
   const fetchPodcast = async () => {
     if (!id) return;
@@ -107,6 +122,48 @@ export default function PodcastPlayerPage() {
       console.error('Error fetching podcast:', error);
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      
+      mediaRecorder.start(1000); // Collect data every second
+      setIsRecording(true);
+      
+      // Start recording timer
+      recordingIntervalRef.current = window.setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+      
+      console.log('Recording started');
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      alert('Failed to access microphone. Please allow microphone access to record.');
+    }
+  };
+  
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      setIsRecording(false);
+      
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+      
+      console.log('Recording stopped');
     }
   };
   
@@ -193,17 +250,52 @@ export default function PodcastPlayerPage() {
     if (!confirmed) return;
     
     try {
+      // Stop recording first
+      stopRecording();
+      
+      // Wait a bit for the recorder to finish
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Upload recorded audio if available
+      let audioUrl = null;
+      if (audioChunksRef.current.length > 0) {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioFileName = `podcast_${id}_${Date.now()}.webm`;
+        
+        console.log('Uploading audio:', audioFileName, 'Size:', audioBlob.size);
+        
+        const { data: audioData, error: audioError } = await supabase.storage
+          .from('audio')
+          .upload(audioFileName, audioBlob, {
+            cacheControl: '3600',
+            upsert: false,
+          });
+        
+        if (audioError) throw audioError;
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from('audio')
+          .getPublicUrl(audioFileName);
+        audioUrl = publicUrl;
+        
+        console.log('Audio uploaded successfully:', audioUrl);
+      }
+      
+      // Update podcast with audio URL and end time
       await supabase
         .from('podcasts')
         .update({
           is_live: false,
           ended_at: new Date().toISOString(),
+          audio_url: audioUrl,
+          duration: recordingTime,
         })
         .eq('id', id);
       
       navigate('/podcasts');
     } catch (error) {
       console.error('Error ending stream:', error);
+      alert('Failed to save recording. Please try again.');
     }
   };
   
@@ -254,6 +346,17 @@ export default function PodcastPlayerPage() {
     setIsMuted(!isMuted);
   };
   
+  const formatRecordingTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  };
+  
   if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center pt-14">
@@ -292,9 +395,17 @@ export default function PodcastPlayerPage() {
               )}
               
               {podcast.isLive && (
-                <div className="absolute top-4 left-4 px-4 py-2 bg-red-500 rounded-full font-bold flex items-center gap-2 animate-pulse">
-                  <div className="w-3 h-3 bg-white rounded-full" />
-                  LIVE
+                <div className="absolute top-4 left-4 flex flex-col gap-2">
+                  <div className="px-4 py-2 bg-red-500 rounded-full font-bold flex items-center gap-2 animate-pulse">
+                    <div className="w-3 h-3 bg-white rounded-full" />
+                    LIVE
+                  </div>
+                  {isHost && isRecording && (
+                    <div className="px-4 py-2 bg-black/80 backdrop-blur-sm rounded-full font-bold flex items-center gap-2">
+                      <Mic className="w-4 h-4 text-red-500 animate-pulse" />
+                      {formatRecordingTime(recordingTime)}
+                    </div>
+                  )}
                 </div>
               )}
               
@@ -347,6 +458,33 @@ export default function PodcastPlayerPage() {
                 </div>
               </div>
               
+              {/* Recording Status for Host */}
+              {isHost && podcast.isLive && (
+                <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+                  <div className="flex items-center gap-2 text-sm">
+                    {isRecording ? (
+                      <>
+                        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                        <span className="font-semibold">Recording in progress</span>
+                        <span className="text-muted-foreground ml-auto">
+                          {formatRecordingTime(recordingTime)}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-muted-foreground">Recording stopped</span>
+                        <button
+                          onClick={startRecording}
+                          className="ml-auto px-3 py-1 bg-red-500 hover:bg-red-600 rounded-full text-sm font-semibold transition-colors"
+                        >
+                          Resume Recording
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              
               <div className="flex gap-3">
                 <button
                   onClick={handleLike}
@@ -371,7 +509,7 @@ export default function PodcastPlayerPage() {
                     className="flex-1 py-3 bg-red-500 hover:bg-red-600 rounded-lg font-semibold transition-colors"
                   >
                     <StopCircle className="w-5 h-5 inline mr-2" />
-                    End Stream
+                    End & Save
                   </button>
                 )}
                 
