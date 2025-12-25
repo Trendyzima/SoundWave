@@ -1,10 +1,27 @@
-import { Play, Pause, SkipBack, SkipForward, Volume2, Heart, ListMusic } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, Heart, ListMusic, Shuffle, Repeat, Repeat1 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { formatDuration } from '../../lib/utils';
 import { useEffect, useRef, useState } from 'react';
 
 export default function Player() {
-  const { currentSong, isPlaying, currentTime, volume, togglePlay, playNext, playPrevious, setCurrentTime, setVolume, pause } = usePlayerStore();
+  const { 
+    currentSong, 
+    isPlaying, 
+    currentTime, 
+    volume, 
+    isShuffled,
+    repeatMode,
+    togglePlay, 
+    playNext, 
+    playPrevious, 
+    setCurrentTime, 
+    setVolume, 
+    pause,
+    toggleShuffle,
+    cycleRepeat,
+    handleSongEnd,
+  } = usePlayerStore();
+  
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
@@ -54,7 +71,7 @@ export default function Player() {
   };
   
   const handleEnded = () => {
-    playNext();
+    handleSongEnd();
   };
   
   const handleCanPlay = () => {
@@ -84,6 +101,8 @@ export default function Player() {
     const percentage = x / rect.width;
     setVolume(Math.max(0, Math.min(1, percentage)));
   };
+  
+  const RepeatIcon = repeatMode === 'one' ? Repeat1 : Repeat;
   
   return (
     <>
@@ -118,24 +137,58 @@ export default function Player() {
           {/* Controls */}
           <div className="hidden sm:flex flex-col items-center gap-2 flex-1 max-w-2xl">
             <div className="flex items-center gap-4">
+              {/* Shuffle */}
+              <button
+                onClick={toggleShuffle}
+                className={`transition-colors ${
+                  isShuffled 
+                    ? 'text-primary' 
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Shuffle"
+              >
+                <Shuffle className="w-4 h-4" />
+              </button>
+              
+              {/* Previous */}
               <button
                 onClick={playPrevious}
                 className="text-muted-foreground hover:text-foreground transition-colors"
+                title="Previous"
               >
                 <SkipBack className="w-5 h-5" />
               </button>
+              
+              {/* Play/Pause */}
               <button
                 onClick={togglePlay}
                 disabled={!isReady}
                 className="w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+                title={isPlaying ? 'Pause' : 'Play'}
               >
                 {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
               </button>
+              
+              {/* Next */}
               <button
                 onClick={playNext}
                 className="text-muted-foreground hover:text-foreground transition-colors"
+                title="Next"
               >
                 <SkipForward className="w-5 h-5" />
+              </button>
+              
+              {/* Repeat */}
+              <button
+                onClick={cycleRepeat}
+                className={`transition-colors ${
+                  repeatMode !== 'off' 
+                    ? 'text-primary' 
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title={`Repeat: ${repeatMode}`}
+              >
+                <RepeatIcon className="w-4 h-4" />
               </button>
             </div>
             

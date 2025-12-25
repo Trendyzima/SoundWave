@@ -1,8 +1,8 @@
-import { useParams, Navigate, useNavigate } from 'react-router-dom';
+import { useParams, Navigate, useNavigate, Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Song, Comment as CommentType } from '../types';
-import { Play, Heart, Share2, MoreHorizontal, MessageCircle, Loader2, Edit2, Trash2, Users, Copy } from 'lucide-react';
+import { Play, Heart, Share2, MoreHorizontal, MessageCircle, Loader2, Edit2, Trash2, Users, Copy, Mic } from 'lucide-react';
 import { usePlayerStore } from '../stores/playerStore';
 import { formatNumber, formatDate, formatDuration } from '../lib/utils';
 import Comment from '../components/features/Comment';
@@ -392,6 +392,14 @@ export default function SongPage() {
                   <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
                   <span className="font-semibold">{isLiked ? 'Liked' : 'Like'}</span>
                 </button>
+                
+                <Link
+                  to={`/karaoke?song=${song.id}`}
+                  className="px-6 py-3 glass-card rounded-full hover:bg-white/10 transition-colors flex items-center gap-2"
+                >
+                  <Mic className="w-5 h-5" />
+                  <span className="font-semibold">Karaoke</span>
+                </Link>
                 
                 {!isOwner && (
                   <button

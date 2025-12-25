@@ -21,8 +21,10 @@ import GoLivePage from './pages/GoLivePage';
 import PodcastPlayerPage from './pages/PodcastPlayerPage';
 import DJMixesPage from './pages/DJMixesPage';
 import EventsPage from './pages/EventsPage';
+import EventDetailPage from './pages/EventDetailPage';
 import ChallengesPage from './pages/ChallengesPage';
 import AdminDashboard from './pages/AdminDashboard';
+import KaraokeStudioPage from './pages/KaraokeStudioPage';
 
 export default function App() {
   const { login, logout, setLoading } = useAuthStore();
@@ -81,7 +83,9 @@ export default function App() {
           <Route path="/podcast/:id" element={<PodcastPlayerPage />} />
           <Route path="/dj-mixes" element={<DJMixesPage />} />
           <Route path="/events" element={<EventsPage />} />
+          <Route path="/event/:id" element={<EventDetailPage />} />
           <Route path="/challenges" element={<ChallengesPage />} />
+          <Route path="/karaoke" element={<KaraokeStudioPage />} />
           <Route path="/admin" element={<AdminDashboard />} />
         </Routes>
         <BottomNav />
