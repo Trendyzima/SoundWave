@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../stores/authStore';
 import { Navigate, useParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { User, Song } from '../types';
 import { 
   Loader2, Calendar, MapPin, Link as LinkIcon, Edit2, Save, X, 
-  Music, Heart, MessageCircle, BarChart3, TrendingUp 
+  Music, Heart, MessageCircle, BarChart3, TrendingUp, Camera, Upload as UploadIcon
 } from 'lucide-react';
 import { formatDuration } from '../lib/utils';
 
@@ -19,6 +19,10 @@ export default function ProfilePage() {
   const [uploadedSongs, setUploadedSongs] = useState<Song[]>([]);
   const [likedSongs, setLikedSongs] = useState<Song[]>([]);
   const [activeTab, setActiveTab] = useState<'posts' | 'analytics' | 'likes'>('posts');
+  const [uploading, setUploading] = useState(false);
+  
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
   
   const [editForm, setEditForm] = useState({
     username: '',
@@ -26,6 +30,11 @@ export default function ProfilePage() {
     location: '',
     website: '',
   });
+  
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string>('');
+  const [coverPreview, setCoverPreview] = useState<string>('');
   
   const [stats, setStats] = useState({
     totalPlays: 0,
@@ -73,6 +82,8 @@ export default function ProfilePage() {
       };
       
       setProfile(mappedProfile);
+      setAvatarPreview(mappedProfile.avatarUrl);
+      setCoverPreview(mappedProfile.coverUrl || '');
       setEditForm({
         username: mappedProfile.username,
         bio: mappedProfile.bio || '',
@@ -240,10 +251,68 @@ export default function ProfilePage() {
     }
   };
   
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setAvatarFile(file);
+      setAvatarPreview(URL.createObjectURL(file));
+    }
+  };
+  
+  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setCoverFile(file);
+      setCoverPreview(URL.createObjectURL(file));
+    }
+  };
+  
   const handleSaveProfile = async () => {
     if (!currentUser) return;
     
+    setUploading(true);
+    
     try {
+      let avatarUrl = profile?.avatarUrl;
+      let coverUrl = profile?.coverUrl;
+      
+      // Upload avatar if changed
+      if (avatarFile) {
+        const avatarFileName = `${currentUser.id}_avatar_${Date.now()}.${avatarFile.name.split('.').pop()}`;
+        const { data, error } = await supabase.storage
+          .from('covers')
+          .upload(avatarFileName, avatarFile, {
+            cacheControl: '3600',
+            upsert: true,
+          });
+        
+        if (error) throw error;
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from('covers')
+          .getPublicUrl(avatarFileName);
+        avatarUrl = publicUrl;
+      }
+      
+      // Upload cover if changed
+      if (coverFile) {
+        const coverFileName = `${currentUser.id}_cover_${Date.now()}.${coverFile.name.split('.').pop()}`;
+        const { data, error } = await supabase.storage
+          .from('covers')
+          .upload(coverFileName, coverFile, {
+            cacheControl: '3600',
+            upsert: true,
+          });
+        
+        if (error) throw error;
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from('covers')
+          .getPublicUrl(coverFileName);
+        coverUrl = publicUrl;
+      }
+      
+      // Update profile
       const { error } = await supabase
         .from('user_profiles')
         .update({
@@ -251,15 +320,22 @@ export default function ProfilePage() {
           bio: editForm.bio || null,
           location: editForm.location || null,
           website: editForm.website || null,
+          avatar_url: avatarUrl,
+          cover_url: coverUrl,
         })
         .eq('id', currentUser.id);
       
       if (error) throw error;
       
       setEditing(false);
+      setAvatarFile(null);
+      setCoverFile(null);
       loadOwnProfile();
     } catch (error) {
       console.error('Error updating profile:', error);
+      alert('Failed to update profile');
+    } finally {
+      setUploading(false);
     }
   };
   
@@ -324,31 +400,102 @@ export default function ProfilePage() {
         <div className="max-w-2xl">
           {/* Cover & Avatar */}
           <div className="relative">
-            <div className="h-48 bg-gradient-to-br from-primary/30 to-accent/30" />
+            {/* Cover Image */}
+            <div className="relative h-48 bg-gradient-to-br from-primary/30 to-accent/30 overflow-hidden">
+              {coverPreview && (
+                <img
+                  src={coverPreview}
+                  alt="Cover"
+                  className="w-full h-full object-cover"
+                />
+              )}
+              {editing && (
+                <>
+                  <input
+                    ref={coverInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleCoverChange}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => coverInputRef.current?.click()}
+                    className="absolute top-4 right-4 p-2 bg-black/50 backdrop-blur-sm rounded-full hover:bg-black/70 transition-colors"
+                  >
+                    <Camera className="w-5 h-5" />
+                  </button>
+                </>
+              )}
+            </div>
+            
             <div className="px-4">
               <div className="flex justify-between items-start -mt-16 mb-4">
-                <img
-                  src={profile.avatarUrl}
-                  alt={profile.username}
-                  className="w-32 h-32 rounded-full border-4 border-background object-cover"
-                />
+                {/* Avatar */}
+                <div className="relative">
+                  <img
+                    src={avatarPreview}
+                    alt={profile.username}
+                    className="w-32 h-32 rounded-full border-4 border-background object-cover"
+                  />
+                  {editing && (
+                    <>
+                      <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarChange}
+                        className="hidden"
+                      />
+                      <button
+                        onClick={() => avatarInputRef.current?.click()}
+                        className="absolute bottom-0 right-0 p-2 bg-primary rounded-full hover:scale-110 transition-transform"
+                      >
+                        <Camera className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
+                </div>
+                
                 {isOwnProfile ? (
-                  <button
-                    onClick={() => editing ? handleSaveProfile() : setEditing(true)}
-                    className="mt-20 px-4 py-2 border border-white/20 rounded-full font-semibold hover:bg-white/10 transition-colors flex items-center gap-2"
-                  >
-                    {editing ? (
-                      <>
-                        <Save className="w-4 h-4" />
-                        Save
-                      </>
-                    ) : (
-                      <>
-                        <Edit2 className="w-4 h-4" />
-                        Edit profile
-                      </>
+                  <div className="flex gap-2 mt-20">
+                    {editing && (
+                      <button
+                        onClick={() => {
+                          setEditing(false);
+                          setAvatarFile(null);
+                          setCoverFile(null);
+                          setAvatarPreview(profile.avatarUrl);
+                          setCoverPreview(profile.coverUrl || '');
+                        }}
+                        className="px-4 py-2 border border-white/20 rounded-full font-semibold hover:bg-white/10 transition-colors flex items-center gap-2"
+                      >
+                        <X className="w-4 h-4" />
+                        Cancel
+                      </button>
                     )}
-                  </button>
+                    <button
+                      onClick={() => editing ? handleSaveProfile() : setEditing(true)}
+                      disabled={uploading}
+                      className="px-4 py-2 bg-primary hover:bg-primary/90 rounded-full font-semibold transition-colors flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {uploading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : editing ? (
+                        <>
+                          <Save className="w-4 h-4" />
+                          Save
+                        </>
+                      ) : (
+                        <>
+                          <Edit2 className="w-4 h-4" />
+                          Edit profile
+                        </>
+                      )}
+                    </button>
+                  </div>
                 ) : (
                   <div className="flex gap-2 mt-20">
                     <Link

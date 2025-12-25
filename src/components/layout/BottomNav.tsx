@@ -1,14 +1,16 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, Radio, Calendar, User } from 'lucide-react';
+import { Home, Search, Radio, Music2, User, Trophy, Mic, Upload } from 'lucide-react';
+import { useAuth } from '../../stores/authStore';
 
 export default function BottomNav() {
   const location = useLocation();
+  const { isAuthenticated } = useAuth();
   
   const navItems = [
     { to: '/', icon: Home, label: 'Home' },
     { to: '/search', icon: Search, label: 'Search' },
-    { to: '/podcasts', icon: Radio, label: 'Podcasts' },
-    { to: '/events', icon: Calendar, label: 'Events' },
+    { to: '/dj-mixes', icon: Music2, label: 'DJ' },
+    { to: '/challenges', icon: Trophy, label: 'Challenges' },
     { to: '/profile', icon: User, label: 'Profile' },
   ];
   
@@ -26,10 +28,21 @@ export default function BottomNav() {
               }`}
             >
               <item.icon className="w-6 h-6" />
+              <span className="text-xs mt-1">{item.label}</span>
             </Link>
           );
         })}
       </div>
+      
+      {/* Floating Upload Button */}
+      {isAuthenticated && (
+        <Link
+          to="/upload"
+          className="absolute -top-8 left-1/2 -translate-x-1/2 w-14 h-14 bg-gradient-primary rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
+        >
+          <Upload className="w-6 h-6" />
+        </Link>
+      )}
     </nav>
   );
 }

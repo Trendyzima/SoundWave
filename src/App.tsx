@@ -25,6 +25,7 @@ import EventDetailPage from './pages/EventDetailPage';
 import ChallengesPage from './pages/ChallengesPage';
 import AdminDashboard from './pages/AdminDashboard';
 import KaraokeStudioPage from './pages/KaraokeStudioPage';
+import LocalMusicPage from './pages/LocalMusicPage';
 
 export default function App() {
   const { login, logout, setLoading } = useAuthStore();
@@ -86,6 +87,7 @@ export default function App() {
           <Route path="/event/:id" element={<EventDetailPage />} />
           <Route path="/challenges" element={<ChallengesPage />} />
           <Route path="/karaoke" element={<KaraokeStudioPage />} />
+          <Route path="/local-music" element={<LocalMusicPage />} />
           <Route path="/admin" element={<AdminDashboard />} />
         </Routes>
         <BottomNav />
