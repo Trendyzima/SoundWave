@@ -3,7 +3,7 @@ import { useAuth } from '../stores/authStore';
 import { Navigate, useSearchParams, useNavigate } from 'react-router-dom';
 import { 
   Mic, Play, Pause, Square, Download, Loader2, 
-  Volume2, VolumeX, Settings, Waveform, Sparkles 
+  Volume2, VolumeX, Settings, Activity, Sparkles 
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -475,7 +475,7 @@ export default function KaraokeStudioPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="glass-card p-6 rounded-xl text-center">
             <div className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-3">
-              <Waveform className="w-6 h-6 text-primary" />
+              <Activity className="w-6 h-6 text-primary" />
             </div>
             <h3 className="font-semibold mb-2">Studio Quality</h3>
             <p className="text-sm text-muted-foreground">
