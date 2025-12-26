@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">npm run buildnpx cap add android</string>
+    <string name="title_activity_main">npm run buildnpx cap add android</string>
+    <string name="package_name">com.music.com</string>
+    <string name="custom_url_scheme">com.music.com</string>
+</resources>
