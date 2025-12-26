@@ -32,9 +32,16 @@ export default function LocalMusicPage() {
     try {
       const discovered = await autoDiscoverMusic();
       setLocalSongs([...localSongs, ...discovered]);
-    } catch (error) {
+      
+      if (discovered.length > 0) {
+        alert(`Successfully discovered ${discovered.length} songs! They are now available in your Library.`);
+      }
+    } catch (error: any) {
       console.error('Error auto-discovering music:', error);
-      alert('Failed to auto-discover music. Please grant folder access.');
+      
+      // Show user-friendly error message
+      const errorMessage = error.message || 'Failed to auto-discover music. Please try again.';
+      alert(errorMessage);
     } finally {
       setAutoScanning(false);
     }
@@ -44,6 +51,11 @@ export default function LocalMusicPage() {
     const files = Array.from(e.target.files || []);
     const audioFiles = files.filter(file => file.type.startsWith('audio/'));
     
+    if (audioFiles.length === 0) {
+      alert('No audio files selected. Please select audio files (MP3, WAV, FLAC, etc.)');
+      return;
+    }
+    
     setLoading(true);
     try {
       const newSongs: LocalSong[] = await Promise.all(
@@ -51,8 +63,13 @@ export default function LocalMusicPage() {
       );
       
       setLocalSongs([...localSongs, ...newSongs]);
+      
+      if (newSongs.length > 0) {
+        alert(`Successfully imported ${newSongs.length} songs!`);
+      }
     } catch (error) {
       console.error('Error importing files:', error);
+      alert('Failed to import some files. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -74,15 +91,27 @@ export default function LocalMusicPage() {
         }
       }
       
+      if (files.length === 0) {
+        alert('No audio files found in the selected folder.');
+        return;
+      }
+      
       setLoading(true);
       const newSongs: LocalSong[] = await Promise.all(
         files.map(file => createSongFromFile(file))
       );
       
       setLocalSongs([...localSongs, ...newSongs]);
-    } catch (error) {
+      
+      if (newSongs.length > 0) {
+        alert(`Successfully imported ${newSongs.length} songs from folder!`);
+      }
+    } catch (error: any) {
       console.error('Error importing folder:', error);
-      alert('Failed to import folder. Your browser may not support this feature.');
+      
+      if (error.name !== 'AbortError') {
+        alert('Failed to import folder. Your browser may not support this feature. Please use Chrome or Edge.');
+      }
     } finally {
       setLoading(false);
     }

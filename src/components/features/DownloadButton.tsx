@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Download, Loader2, Check } from 'lucide-react';
 import { Song } from '../../types';
 import { downloadSongForOffline, isSongDownloaded } from '../../lib/localMusic';
-import { useEffect } from 'react';
+import { saveDownloadedSong } from '../../lib/musicLibrary';
+import { useAuth } from '../../stores/authStore';
 
 interface DownloadButtonProps {
   song: Song;
@@ -10,6 +11,7 @@ interface DownloadButtonProps {
 }
 
 export default function DownloadButton({ song, className = '' }: DownloadButtonProps) {
+  const { user } = useAuth();
   const [downloading, setDownloading] = useState(false);
   const [isDownloaded, setIsDownloaded] = useState(false);
   
@@ -30,11 +32,21 @@ export default function DownloadButton({ song, className = '' }: DownloadButtonP
     
     setDownloading(true);
     try {
+      // Download the song for offline use
       await downloadSongForOffline(song);
+      
+      // Save to unified library
+      await saveDownloadedSong(song, user?.id);
+      
       setIsDownloaded(true);
+      
+      // Show success message
+      setTimeout(() => {
+        alert('Song downloaded successfully! You can now play it offline from your Library.');
+      }, 100);
     } catch (error) {
       console.error('Error downloading song:', error);
-      alert('Failed to download song for offline listening');
+      alert('Failed to download song. Please try again.');
     } finally {
       setDownloading(false);
     }
@@ -45,22 +57,22 @@ export default function DownloadButton({ song, className = '' }: DownloadButtonP
       onClick={handleDownload}
       disabled={downloading || isDownloaded}
       className={`flex items-center gap-2 transition-colors disabled:cursor-not-allowed ${className}`}
-      title={isDownloaded ? 'Downloaded for offline' : 'Download for offline listening'}
+      title={isDownloaded ? 'Downloaded - Available offline in Library' : 'Download for offline listening'}
     >
       {downloading ? (
         <>
           <Loader2 className="w-5 h-5 animate-spin" />
-          <span className="text-sm">Downloading...</span>
+          <span className="text-sm font-semibold">Downloading...</span>
         </>
       ) : isDownloaded ? (
         <>
           <Check className="w-5 h-5 text-green-500" />
-          <span className="text-sm text-green-500">Downloaded</span>
+          <span className="text-sm font-semibold text-green-500">Downloaded</span>
         </>
       ) : (
         <>
           <Download className="w-5 h-5" />
-          <span className="text-sm">Download</span>
+          <span className="text-sm font-semibold">Download</span>
         </>
       )}
     </button>
