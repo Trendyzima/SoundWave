@@ -1,77 +1,61 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../stores/authStore';
 import { Navigate } from 'react-router-dom';
-import { Folder, Music, Play, Pause, Plus, Trash2, ListMusic } from 'lucide-react';
+import { Folder, Music, Play, Pause, Plus, Trash2, ListMusic, Download, Loader2, HardDrive, Sparkles } from 'lucide-react';
 import { usePlayerStore } from '../stores/playerStore';
-
-interface LocalSong {
-  id: string;
-  title: string;
-  artist: string;
-  duration: number;
-  audioUrl: string;
-  file: File;
-  coverUrl: string;
-}
+import { autoDiscoverMusic, getLocalSongs, LocalSong, createSongFromFile } from '../lib/localMusic';
 
 export default function LocalMusicPage() {
   const { isAuthenticated } = useAuth();
   const { play, currentSong, isPlaying, togglePlay } = usePlayerStore();
   const [localSongs, setLocalSongs] = useState<LocalSong[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [autoScanning, setAutoScanning] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Load local songs from localStorage on mount
-  useState(() => {
-    const stored = localStorage.getItem('local_music');
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        // Note: We can't restore File objects from localStorage
-        // User will need to re-import files
-      } catch (e) {
-        console.error('Error loading local music:', e);
-      }
+  // Load cached local songs on mount
+  useEffect(() => {
+    loadCachedSongs();
+  }, []);
+  
+  const loadCachedSongs = async () => {
+    try {
+      const cached = await getLocalSongs();
+      setLocalSongs(cached);
+    } catch (error) {
+      console.error('Error loading cached songs:', error);
     }
-  });
+  };
+  
+  const handleAutoDiscover = async () => {
+    setAutoScanning(true);
+    try {
+      const discovered = await autoDiscoverMusic();
+      setLocalSongs([...localSongs, ...discovered]);
+    } catch (error) {
+      console.error('Error auto-discovering music:', error);
+      alert('Failed to auto-discover music. Please grant folder access.');
+    } finally {
+      setAutoScanning(false);
+    }
+  };
   
   const handleImportFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     const audioFiles = files.filter(file => file.type.startsWith('audio/'));
     
-    const newSongs: LocalSong[] = await Promise.all(
-      audioFiles.map(async (file) => {
-        // Extract metadata
-        const audioUrl = URL.createObjectURL(file);
-        const audio = new Audio(audioUrl);
-        
-        return new Promise<LocalSong>((resolve) => {
-          audio.addEventListener('loadedmetadata', () => {
-            const song: LocalSong = {
-              id: `local_${Date.now()}_${Math.random().toString(36)}`,
-              title: file.name.replace(/\.[^/.]+$/, ''),
-              artist: 'Local Artist',
-              duration: Math.floor(audio.duration),
-              audioUrl,
-              file,
-              coverUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=400&fit=crop',
-            };
-            resolve(song);
-          });
-        });
-      })
-    );
-    
-    setLocalSongs([...localSongs, ...newSongs]);
-    
-    // Save metadata to localStorage (without the File object)
-    const metadata = newSongs.map(song => ({
-      id: song.id,
-      title: song.title,
-      artist: song.artist,
-      duration: song.duration,
-      fileName: song.file.name,
-    }));
-    localStorage.setItem('local_music_metadata', JSON.stringify(metadata));
+    setLoading(true);
+    try {
+      const newSongs: LocalSong[] = await Promise.all(
+        audioFiles.map(file => createSongFromFile(file))
+      );
+      
+      setLocalSongs([...localSongs, ...newSongs]);
+    } catch (error) {
+      console.error('Error importing files:', error);
+    } finally {
+      setLoading(false);
+    }
   };
   
   const handleImportFolder = async () => {
@@ -90,68 +74,32 @@ export default function LocalMusicPage() {
         }
       }
       
-      // Create local songs from files
+      setLoading(true);
       const newSongs: LocalSong[] = await Promise.all(
-        files.map(async (file) => {
-          const audioUrl = URL.createObjectURL(file);
-          const audio = new Audio(audioUrl);
-          
-          return new Promise<LocalSong>((resolve) => {
-            audio.addEventListener('loadedmetadata', () => {
-              resolve({
-                id: `local_${Date.now()}_${Math.random().toString(36)}`,
-                title: file.name.replace(/\.[^/.]+$/, ''),
-                artist: 'Local Artist',
-                duration: Math.floor(audio.duration),
-                audioUrl,
-                file,
-                coverUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=400&fit=crop',
-              });
-            });
-          });
-        })
+        files.map(file => createSongFromFile(file))
       );
       
       setLocalSongs([...localSongs, ...newSongs]);
     } catch (error) {
       console.error('Error importing folder:', error);
       alert('Failed to import folder. Your browser may not support this feature.');
+    } finally {
+      setLoading(false);
     }
   };
   
   const handlePlaySong = (song: LocalSong) => {
-    const playerSong = {
-      id: song.id,
-      title: song.title,
-      artist: song.artist,
-      album: '',
-      coverUrl: song.coverUrl,
-      duration: song.duration,
-      audioUrl: song.audioUrl,
-      plays: 0,
-      likes: 0,
-      releaseDate: '',
-      genre: 'Local',
-    };
-    
     const isCurrentSong = currentSong?.id === song.id;
     if (isCurrentSong) {
       togglePlay();
     } else {
       const queue = localSongs.map(s => ({
-        id: s.id,
-        title: s.title,
-        artist: s.artist,
-        album: '',
-        coverUrl: s.coverUrl,
-        duration: s.duration,
-        audioUrl: s.audioUrl,
-        plays: 0,
-        likes: 0,
-        releaseDate: '',
-        genre: 'Local',
+        ...s,
+        isLocal: undefined,
+        file: undefined,
+        downloaded: undefined,
       }));
-      play(playerSong, queue);
+      play(song, queue);
     }
   };
   
@@ -175,15 +123,48 @@ export default function LocalMusicPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl sm:text-4xl font-bold mb-2 flex items-center gap-3">
-            <Music className="w-8 h-8" />
+            <HardDrive className="w-8 h-8" />
             Local Music Library
           </h1>
           <p className="text-muted-foreground">
-            Import and play music from your device. Works offline!
+            Auto-discover and play music from your device. Works offline!
           </p>
         </div>
         
-        {/* Import Buttons */}
+        {/* Auto-Discover Banner */}
+        <div className="glass-card p-6 rounded-2xl mb-6 bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/20">
+          <div className="flex items-start gap-4">
+            <div className="w-16 h-16 bg-gradient-primary rounded-full flex items-center justify-center flex-shrink-0">
+              <Sparkles className="w-8 h-8" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-xl font-bold mb-2">Auto-Discover Music</h2>
+              <p className="text-muted-foreground mb-4">
+                Grant access to your music folder and we'll automatically find and load all your music files.
+                Supports MP3, WAV, FLAC, OGG, M4A, AAC, and more!
+              </p>
+              <button
+                onClick={handleAutoDiscover}
+                disabled={autoScanning}
+                className="px-6 py-3 bg-gradient-primary rounded-full font-semibold hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {autoScanning ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Scanning...
+                  </>
+                ) : (
+                  <>
+                    <HardDrive className="w-5 h-5" />
+                    Auto-Discover Music
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        {/* Manual Import Options */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
           <div className="glass-card p-6 rounded-2xl">
             <input
@@ -196,6 +177,7 @@ export default function LocalMusicPage() {
             />
             <button
               onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
               className="w-full"
             >
               <div className="flex flex-col items-center gap-3">
@@ -209,8 +191,17 @@ export default function LocalMusicPage() {
                   </p>
                 </div>
                 <div className="px-4 py-2 bg-primary rounded-full font-semibold flex items-center gap-2 hover:scale-105 transition-transform">
-                  <Plus className="w-4 h-4" />
-                  Choose Files
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      Choose Files
+                    </>
+                  )}
                 </div>
               </div>
             </button>
@@ -219,6 +210,7 @@ export default function LocalMusicPage() {
           <div className="glass-card p-6 rounded-2xl">
             <button
               onClick={handleImportFolder}
+              disabled={loading}
               className="w-full"
             >
               <div className="flex flex-col items-center gap-3">
@@ -246,7 +238,7 @@ export default function LocalMusicPage() {
             <Music className="w-20 h-20 text-muted-foreground mx-auto mb-4 opacity-50" />
             <h2 className="text-2xl font-bold mb-2">No Local Music Yet</h2>
             <p className="text-muted-foreground mb-6">
-              Import music files from your device to get started
+              Use auto-discover or import music files from your device to get started
             </p>
           </div>
         ) : (
@@ -260,17 +252,10 @@ export default function LocalMusicPage() {
                 onClick={() => {
                   if (localSongs.length > 0) {
                     const queue = localSongs.map(s => ({
-                      id: s.id,
-                      title: s.title,
-                      artist: s.artist,
-                      album: '',
-                      coverUrl: s.coverUrl,
-                      duration: s.duration,
-                      audioUrl: s.audioUrl,
-                      plays: 0,
-                      likes: 0,
-                      releaseDate: '',
-                      genre: 'Local',
+                      ...s,
+                      isLocal: undefined,
+                      file: undefined,
+                      downloaded: undefined,
                     }));
                     play(queue[0], queue);
                   }
@@ -316,7 +301,15 @@ export default function LocalMusicPage() {
                       
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold truncate">{song.title}</h3>
-                        <p className="text-sm text-muted-foreground truncate">{song.artist}</p>
+                        <p className="text-sm text-muted-foreground truncate flex items-center gap-2">
+                          {song.artist}
+                          {song.downloaded && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-500/20 text-green-500 rounded-full text-xs">
+                              <Download className="w-3 h-3" />
+                              Offline
+                            </span>
+                          )}
+                        </p>
                       </div>
                       
                       <span className="text-sm text-muted-foreground">
@@ -343,20 +336,20 @@ export default function LocalMusicPage() {
             <Music className="w-8 h-8 text-primary mx-auto mb-3" />
             <h3 className="font-semibold mb-2">All Formats Supported</h3>
             <p className="text-sm text-muted-foreground">
-              MP3, WAV, FLAC, AAC, OGG and more
+              MP3, WAV, FLAC, AAC, OGG, M4A, WMA, OPUS and more
             </p>
           </div>
           
           <div className="glass-card p-6 rounded-xl text-center">
             <Folder className="w-8 h-8 text-accent mx-auto mb-3" />
-            <h3 className="font-semibold mb-2">Bulk Import</h3>
+            <h3 className="font-semibold mb-2">Auto-Discovery</h3>
             <p className="text-sm text-muted-foreground">
-              Import entire folders at once
+              Automatically finds all music on your device
             </p>
           </div>
           
           <div className="glass-card p-6 rounded-xl text-center">
-            <Play className="w-8 h-8 text-green-500 mx-auto mb-3" />
+            <Download className="w-8 h-8 text-green-500 mx-auto mb-3" />
             <h3 className="font-semibold mb-2">Offline Playback</h3>
             <p className="text-sm text-muted-foreground">
               Works without internet connection

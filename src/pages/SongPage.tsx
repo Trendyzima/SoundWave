@@ -6,6 +6,7 @@ import { Play, Heart, Share2, MoreHorizontal, MessageCircle, Loader2, Edit2, Tra
 import { usePlayerStore } from '../stores/playerStore';
 import { formatNumber, formatDate, formatDuration } from '../lib/utils';
 import Comment from '../components/features/Comment';
+import DownloadButton from '../components/features/DownloadButton';
 import { useAuth } from '../stores/authStore';
 
 export default function SongPage() {
@@ -400,6 +401,11 @@ export default function SongPage() {
                   <Mic className="w-5 h-5" />
                   <span className="font-semibold">Karaoke</span>
                 </Link>
+                
+                <DownloadButton 
+                  song={song} 
+                  className="px-6 py-3 glass-card rounded-full hover:bg-white/10"
+                />
                 
                 {!isOwner && (
                   <button
