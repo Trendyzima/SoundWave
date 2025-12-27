@@ -6,7 +6,7 @@ export interface LocalSong extends Song {
   downloaded?: boolean;
 }
 
-// Enhanced auto-discovery with better error handling
+// Enhanced auto-discovery with better error handling and auto-sync
 export const autoDiscoverMusic = async (): Promise<LocalSong[]> => {
   try {
     // Check if File System Access API is supported
@@ -34,6 +34,9 @@ export const autoDiscoverMusic = async (): Promise<LocalSong[]> => {
     // Save to IndexedDB for offline access
     await saveLocalSongs(songs);
     
+    // Save folder handle for future auto-sync
+    await saveFolderHandle(dirHandle);
+    
     return songs;
   } catch (error: any) {
     if (error.name === 'AbortError') {
@@ -41,6 +44,41 @@ export const autoDiscoverMusic = async (): Promise<LocalSong[]> => {
     }
     console.error('Error auto-discovering music:', error);
     throw error;
+  }
+};
+
+// Auto-sync music from previously granted folder access
+export const autoSyncLocalMusic = async (): Promise<LocalSong[]> => {
+  try {
+    const dirHandle = await getSavedFolderHandle();
+    if (!dirHandle) {
+      return [];
+    }
+    
+    // Request permission if needed
+    const permission = await dirHandle.requestPermission({ mode: 'read' });
+    if (permission !== 'granted') {
+      return [];
+    }
+    
+    const audioFiles: File[] = [];
+    await scanDirectory(dirHandle, audioFiles);
+    
+    if (audioFiles.length === 0) {
+      return [];
+    }
+    
+    const songs = await Promise.all(
+      audioFiles.map(file => createSongFromFile(file))
+    );
+    
+    // Save to IndexedDB for offline access
+    await saveLocalSongs(songs);
+    
+    return songs;
+  } catch (error) {
+    console.warn('Auto-sync failed, user needs to re-grant access:', error);
+    return [];
   }
 };
 
@@ -193,10 +231,11 @@ const extractMetadata = async (file: File): Promise<any> => {
 // IndexedDB operations for offline storage
 const DB_NAME = 'soundwave_library';
 const STORE_NAME = 'local_songs';
+const FOLDER_HANDLE_STORE = 'folder_handles';
 
 const openDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 2);
+    const request = indexedDB.open(DB_NAME, 3);
     
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
@@ -209,6 +248,11 @@ const openDB = (): Promise<IDBDatabase> => {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
         store.createIndex('title', 'title', { unique: false });
         store.createIndex('artist', 'artist', { unique: false });
+      }
+      
+      // Create folder_handles store for persistent folder access
+      if (!db.objectStoreNames.contains(FOLDER_HANDLE_STORE)) {
+        db.createObjectStore(FOLDER_HANDLE_STORE, { keyPath: 'id' });
       }
     };
   });
@@ -312,4 +356,43 @@ export const clearLocalSongs = async (): Promise<void> => {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
   });
+};
+
+// Save folder handle for auto-sync
+const saveFolderHandle = async (dirHandle: any): Promise<void> => {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction([FOLDER_HANDLE_STORE], 'readwrite');
+    const store = transaction.objectStore(FOLDER_HANDLE_STORE);
+    
+    store.put({ id: 'music_folder', handle: dirHandle });
+    
+    return new Promise((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.warn('Failed to save folder handle:', error);
+  }
+};
+
+// Get saved folder handle
+const getSavedFolderHandle = async (): Promise<any> => {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction([FOLDER_HANDLE_STORE], 'readonly');
+    const store = transaction.objectStore(FOLDER_HANDLE_STORE);
+    const request = store.get('music_folder');
+    
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const result = request.result;
+        resolve(result?.handle || null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.warn('Failed to get saved folder handle:', error);
+    return null;
+  }
 };

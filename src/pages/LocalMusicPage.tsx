@@ -3,7 +3,7 @@ import { useAuth } from '../stores/authStore';
 import { Navigate } from 'react-router-dom';
 import { Folder, Music, Play, Pause, Plus, Trash2, ListMusic, Download, Loader2, HardDrive, Sparkles } from 'lucide-react';
 import { usePlayerStore } from '../stores/playerStore';
-import { autoDiscoverMusic, getLocalSongs, LocalSong, createSongFromFile } from '../lib/localMusic';
+import { autoDiscoverMusic, getLocalSongs, LocalSong, createSongFromFile, autoSyncLocalMusic } from '../lib/localMusic';
 
 export default function LocalMusicPage() {
   const { isAuthenticated } = useAuth();
@@ -13,9 +13,10 @@ export default function LocalMusicPage() {
   const [autoScanning, setAutoScanning] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Load cached local songs on mount
+  // Load cached local songs and auto-sync on mount
   useEffect(() => {
     loadCachedSongs();
+    autoSync();
   }, []);
   
   const loadCachedSongs = async () => {
@@ -27,6 +28,18 @@ export default function LocalMusicPage() {
     }
   };
   
+  const autoSync = async () => {
+    try {
+      const synced = await autoSyncLocalMusic();
+      if (synced.length > 0) {
+        setLocalSongs(synced);
+        console.log(`Auto-synced ${synced.length} songs from device`);
+      }
+    } catch (error) {
+      console.warn('Auto-sync failed:', error);
+    }
+  };
+  
   const handleAutoDiscover = async () => {
     setAutoScanning(true);
     try {
@@ -34,7 +47,7 @@ export default function LocalMusicPage() {
       setLocalSongs([...localSongs, ...discovered]);
       
       if (discovered.length > 0) {
-        alert(`Successfully discovered ${discovered.length} songs! They are now available in your Library.`);
+        alert(`Successfully discovered ${discovered.length} songs! They are now synced and available offline in your Library.`);
       }
     } catch (error: any) {
       console.error('Error auto-discovering music:', error);
@@ -167,10 +180,10 @@ export default function LocalMusicPage() {
               <Sparkles className="w-8 h-8" />
             </div>
             <div className="flex-1">
-              <h2 className="text-xl font-bold mb-2">Auto-Discover Music</h2>
+              <h2 className="text-xl font-bold mb-2">Auto-Discover & Sync Music</h2>
               <p className="text-muted-foreground mb-4">
-                Grant access to your music folder and we'll automatically find and load all your music files.
-                Supports MP3, WAV, FLAC, OGG, M4A, AAC, and more!
+                Grant access to your music folder once, and we'll automatically find, sync, and keep your music library up to date.
+                All songs will be available offline. Supports MP3, WAV, FLAC, OGG, M4A, AAC, and more!
               </p>
               <button
                 onClick={handleAutoDiscover}
@@ -185,7 +198,7 @@ export default function LocalMusicPage() {
                 ) : (
                   <>
                     <HardDrive className="w-5 h-5" />
-                    Auto-Discover Music
+                    Auto-Discover & Sync
                   </>
                 )}
               </button>
@@ -371,9 +384,9 @@ export default function LocalMusicPage() {
           
           <div className="glass-card p-6 rounded-xl text-center">
             <Folder className="w-8 h-8 text-accent mx-auto mb-3" />
-            <h3 className="font-semibold mb-2">Auto-Discovery</h3>
+            <h3 className="font-semibold mb-2">Auto-Discovery & Sync</h3>
             <p className="text-sm text-muted-foreground">
-              Automatically finds all music on your device
+              Automatically finds and syncs all music on your device
             </p>
           </div>
           

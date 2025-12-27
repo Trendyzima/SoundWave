@@ -18,7 +18,7 @@ const LOCAL_STORE = 'local_songs';
 
 const openLibraryDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 2);
+    const request = indexedDB.open(DB_NAME, 3);
     
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
@@ -176,7 +176,7 @@ export const getUnifiedLibrary = async (userId?: string): Promise<{
     // Get downloaded songs
     const downloadedSongs = await getDownloadedSongs(userId);
     
-    // Get local songs
+    // Get local songs (always available offline)
     const localSongsData = await getLocalSongs();
     const localSongs: UnifiedSong[] = localSongsData.map(song => ({
       id: song.id,

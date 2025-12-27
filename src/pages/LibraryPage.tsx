@@ -1,335 +1,251 @@
-import { useEffect, useState } from 'react';
-import { Song } from '../types';
-import SongCard from '../components/features/SongCard';
-import { Heart, ListMusic, Clock, Loader2, Music, Upload, Download, HardDrive, Cloud, Sparkles, Play } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../stores/authStore';
 import { Navigate } from 'react-router-dom';
-import { getUnifiedLibrary, UnifiedSong, getLibraryStats } from '../lib/musicLibrary';
+import { Music, Download, HardDrive, Play, Pause } from 'lucide-react';
 import { usePlayerStore } from '../stores/playerStore';
-import { formatDuration } from '../lib/utils';
-
-type TabType = 'all' | 'online' | 'downloads' | 'local';
+import { getUnifiedLibrary, UnifiedSong } from '../lib/musicLibrary';
+import { autoSyncLocalMusic } from '../lib/localMusic';
 
 export default function LibraryPage() {
-  const { isAuthenticated, user, loading: authLoading } = useAuth();
-  const { play } = usePlayerStore();
-  const [activeTab, setActiveTab] = useState<TabType>('all');
-  const [library, setLibrary] = useState<{
-    all: UnifiedSong[];
-    online: UnifiedSong[];
-    downloaded: UnifiedSong[];
-    local: UnifiedSong[];
-  }>({
-    all: [],
-    online: [],
-    downloaded: [],
-    local: [],
-  });
-  const [stats, setStats] = useState<any>(null);
+  const { user, isAuthenticated } = useAuth();
+  const { play, currentSong, isPlaying, togglePlay } = usePlayerStore();
+  const [library, setLibrary] = useState<UnifiedSong[]>([]);
+  const [downloaded, setDownloaded] = useState<UnifiedSong[]>([]);
+  const [local, setLocal] = useState<UnifiedSong[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<'all' | 'downloaded' | 'local'>('all');
   
   useEffect(() => {
-    if (!authLoading && isAuthenticated && user) {
-      fetchLibraryData();
-    }
-  }, [isAuthenticated, user, authLoading]);
+    loadLibrary();
+    syncLocalMusicInBackground();
+  }, [user]);
   
-  const fetchLibraryData = async () => {
-    if (!user) return;
-    
+  const loadLibrary = async () => {
+    setLoading(true);
     try {
-      const libraryData = await getUnifiedLibrary(user.id);
-      const statsData = await getLibraryStats(user.id);
+      const lib = await getUnifiedLibrary(user?.id);
+      setLibrary(lib.all);
+      setDownloaded(lib.downloaded);
+      setLocal(lib.local);
       
-      setLibrary(libraryData);
-      setStats(statsData);
+      // Set active filter based on available content
+      if (lib.downloaded.length > 0 && filter === 'all') {
+        setFilter('downloaded');
+      } else if (lib.local.length > 0 && filter === 'all') {
+        setFilter('local');
+      }
     } catch (error) {
-      console.error('Error fetching library data:', error);
+      console.error('Error loading library:', error);
     } finally {
       setLoading(false);
     }
   };
   
-  const getCurrentSongs = (): UnifiedSong[] => {
-    switch (activeTab) {
-      case 'online':
-        return library.online;
-      case 'downloads':
-        return library.downloaded;
+  const syncLocalMusicInBackground = async () => {
+    try {
+      const synced = await autoSyncLocalMusic();
+      if (synced.length > 0) {
+        // Refresh library after sync
+        const lib = await getUnifiedLibrary(user?.id);
+        setLibrary(lib.all);
+        setLocal(lib.local);
+        console.log(`Background sync: ${synced.length} local songs synchronized`);
+      }
+    } catch (error) {
+      console.warn('Background sync failed:', error);
+    }
+  };
+  
+  const handlePlaySong = (song: UnifiedSong) => {
+    const isCurrentSong = currentSong?.id === song.id;
+    if (isCurrentSong) {
+      togglePlay();
+    } else {
+      const filteredSongs = getFilteredSongs();
+      play(song, filteredSongs);
+    }
+  };
+  
+  const getFilteredSongs = () => {
+    switch (filter) {
+      case 'downloaded':
+        return downloaded;
       case 'local':
-        return library.local;
+        return local;
       default:
-        return library.all;
+        return library;
     }
   };
   
-  const handlePlayAll = () => {
-    const songs = getCurrentSongs();
-    if (songs.length > 0) {
-      // Convert UnifiedSong to Song for player
-      const queue = songs.map(s => ({
-        id: s.id,
-        title: s.title,
-        artist: s.artist,
-        album: s.album,
-        coverUrl: s.coverUrl,
-        duration: s.duration,
-        audioUrl: s.audioUrl,
-        plays: s.plays,
-        likes: s.likes,
-        releaseDate: s.releaseDate,
-        genre: s.genre,
-        description: s.description,
-      }));
-      play(queue[0], queue);
-    }
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
-  
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center pt-20">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
   
   if (!isAuthenticated) {
     return <Navigate to="/auth" />;
   }
   
-  const currentSongs = getCurrentSongs();
+  const filteredSongs = getFilteredSongs();
   
   return (
     <div className="min-h-screen pb-32 pt-20">
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl sm:text-4xl font-bold mb-2">Your Music Library</h1>
-          <p className="text-muted-foreground">All your music in one place - online, downloaded, and local</p>
+          <h1 className="text-3xl sm:text-4xl font-bold mb-2">My Library</h1>
+          <p className="text-muted-foreground">
+            All your music in one place - online, downloaded, and local
+          </p>
         </div>
         
-        {/* Stats Cards */}
-        {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="glass-card p-4 rounded-xl">
-              <div className="flex items-center gap-3 mb-2">
-                <Music className="w-5 h-5 text-primary" />
-                <span className="text-sm text-muted-foreground">Total Songs</span>
-              </div>
-              <p className="text-2xl font-bold">{stats.totalSongs}</p>
-            </div>
-            
-            <div className="glass-card p-4 rounded-xl">
-              <div className="flex items-center gap-3 mb-2">
-                <Cloud className="w-5 h-5 text-blue-400" />
-                <span className="text-sm text-muted-foreground">Online</span>
-              </div>
-              <p className="text-2xl font-bold">{stats.onlineSongs}</p>
-            </div>
-            
-            <div className="glass-card p-4 rounded-xl">
-              <div className="flex items-center gap-3 mb-2">
-                <Download className="w-5 h-5 text-green-400" />
-                <span className="text-sm text-muted-foreground">Downloaded</span>
-              </div>
-              <p className="text-2xl font-bold">{stats.downloadedSongs}</p>
-            </div>
-            
-            <div className="glass-card p-4 rounded-xl">
-              <div className="flex items-center gap-3 mb-2">
-                <HardDrive className="w-5 h-5 text-accent" />
-                <span className="text-sm text-muted-foreground">Local</span>
-              </div>
-              <p className="text-2xl font-bold">{stats.localSongs}</p>
-            </div>
-          </div>
-        )}
-        
-        {/* Tabs */}
-        <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
+        {/* Filter Tabs */}
+        <div className="flex gap-2 mb-6 overflow-x-auto">
           <button
-            onClick={() => setActiveTab('all')}
-            className={`px-6 py-3 rounded-full font-semibold transition-all whitespace-nowrap flex items-center gap-2 ${
-              activeTab === 'all'
-                ? 'bg-gradient-primary'
-                : 'glass-card hover:bg-white/10'
+            onClick={() => setFilter('all')}
+            className={`px-4 py-2 rounded-full font-semibold whitespace-nowrap transition-colors ${
+              filter === 'all'
+                ? 'bg-primary text-white'
+                : 'bg-white/10 hover:bg-white/20'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
-            All Music ({library.all.length})
+            <Music className="w-4 h-4 inline mr-2" />
+            All ({library.length})
           </button>
-          
           <button
-            onClick={() => setActiveTab('online')}
-            className={`px-6 py-3 rounded-full font-semibold transition-all whitespace-nowrap flex items-center gap-2 ${
-              activeTab === 'online'
-                ? 'bg-gradient-primary'
-                : 'glass-card hover:bg-white/10'
+            onClick={() => setFilter('downloaded')}
+            className={`px-4 py-2 rounded-full font-semibold whitespace-nowrap transition-colors ${
+              filter === 'downloaded'
+                ? 'bg-primary text-white'
+                : 'bg-white/10 hover:bg-white/20'
             }`}
           >
-            <Cloud className="w-4 h-4" />
-            Online ({library.online.length})
+            <Download className="w-4 h-4 inline mr-2" />
+            Downloaded ({downloaded.length})
           </button>
-          
           <button
-            onClick={() => setActiveTab('downloads')}
-            className={`px-6 py-3 rounded-full font-semibold transition-all whitespace-nowrap flex items-center gap-2 ${
-              activeTab === 'downloads'
-                ? 'bg-gradient-primary'
-                : 'glass-card hover:bg-white/10'
+            onClick={() => setFilter('local')}
+            className={`px-4 py-2 rounded-full font-semibold whitespace-nowrap transition-colors ${
+              filter === 'local'
+                ? 'bg-primary text-white'
+                : 'bg-white/10 hover:bg-white/20'
             }`}
           >
-            <Download className="w-4 h-4" />
-            Downloads ({library.downloaded.length})
-          </button>
-          
-          <button
-            onClick={() => setActiveTab('local')}
-            className={`px-6 py-3 rounded-full font-semibold transition-all whitespace-nowrap flex items-center gap-2 ${
-              activeTab === 'local'
-                ? 'bg-gradient-primary'
-                : 'glass-card hover:bg-white/10'
-            }`}
-          >
-            <HardDrive className="w-4 h-4" />
-            Local Music ({library.local.length})
+            <HardDrive className="w-4 h-4 inline mr-2" />
+            Local ({local.length})
           </button>
         </div>
         
+        {/* Songs List */}
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <div className="text-center py-20">
+            <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading your library...</p>
+          </div>
+        ) : filteredSongs.length === 0 ? (
+          <div className="text-center py-20">
+            <Music className="w-20 h-20 text-muted-foreground mx-auto mb-4 opacity-50" />
+            <h2 className="text-2xl font-bold mb-2">Your Library is Empty</h2>
+            <p className="text-muted-foreground mb-6">
+              {filter === 'downloaded' && 'Download songs to listen offline'}
+              {filter === 'local' && 'Import local music from your device'}
+              {filter === 'all' && 'Upload songs or add local music to get started'}
+            </p>
           </div>
         ) : (
-          <>
-            {/* Action Bar */}
-            {currentSongs.length > 0 && (
-              <div className="flex items-center justify-between mb-6">
-                <div className="text-muted-foreground">
-                  {currentSongs.length} songs • {formatDuration(currentSongs.reduce((sum, s) => sum + s.duration, 0))}
-                </div>
-                <button
-                  onClick={handlePlayAll}
-                  className="px-6 py-3 bg-gradient-primary rounded-full font-semibold hover:scale-105 transition-transform flex items-center gap-2"
-                >
-                  <Play className="w-4 h-4" />
-                  Play All
-                </button>
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-muted-foreground">
+                {filteredSongs.length} songs
               </div>
-            )}
+              <button
+                onClick={() => {
+                  if (filteredSongs.length > 0) {
+                    play(filteredSongs[0], filteredSongs);
+                  }
+                }}
+                className="px-4 py-2 bg-primary hover:bg-primary/90 rounded-full font-semibold transition-colors flex items-center gap-2"
+              >
+                <Play className="w-4 h-4" />
+                Play All
+              </button>
+            </div>
             
-            {/* Songs Grid */}
-            {currentSongs.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {currentSongs.map((song) => (
-                  <div key={song.id} className="relative">
-                    <SongCard 
-                      song={{
-                        id: song.id,
-                        title: song.title,
-                        artist: song.artist,
-                        album: song.album,
-                        coverUrl: song.coverUrl,
-                        duration: song.duration,
-                        audioUrl: song.audioUrl,
-                        plays: song.plays,
-                        likes: song.likes,
-                        releaseDate: song.releaseDate,
-                        genre: song.genre,
-                        description: song.description,
-                      }} 
-                    />
-                    {/* Source Badge */}
-                    <div className="absolute top-2 right-2 z-10">
-                      {song.source === 'local' && (
-                        <div className="px-2 py-1 bg-accent/90 rounded-full text-xs font-semibold backdrop-blur-sm flex items-center gap-1">
-                          <HardDrive className="w-3 h-3" />
-                          Local
-                        </div>
-                      )}
-                      {song.source === 'downloaded' && (
-                        <div className="px-2 py-1 bg-green-500/90 rounded-full text-xs font-semibold backdrop-blur-sm flex items-center gap-1">
-                          <Download className="w-3 h-3" />
-                          Offline
-                        </div>
-                      )}
-                      {song.source === 'online' && song.isAvailableOffline && (
-                        <div className="px-2 py-1 bg-blue-500/90 rounded-full text-xs font-semibold backdrop-blur-sm flex items-center gap-1">
-                          <Cloud className="w-3 h-3" />
-                          Online
-                        </div>
-                      )}
+            <div className="space-y-2">
+              {filteredSongs.map((song, index) => {
+                const isCurrentSong = currentSong?.id === song.id;
+                return (
+                  <div
+                    key={song.id}
+                    className={`p-4 rounded-xl border transition-all ${
+                      isCurrentSong
+                        ? 'border-primary bg-primary/10'
+                        : 'border-white/10 hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <span className="text-muted-foreground w-8 text-right">{index + 1}</span>
+                      
+                      <button
+                        onClick={() => handlePlaySong(song)}
+                        className="w-12 h-12 bg-primary/20 hover:bg-primary/30 rounded-full flex items-center justify-center transition-colors flex-shrink-0"
+                      >
+                        {isPlaying && isCurrentSong ? (
+                          <Pause className="w-5 h-5" />
+                        ) : (
+                          <Play className="w-5 h-5 ml-0.5" />
+                        )}
+                      </button>
+                      
+                      <img
+                        src={song.coverUrl}
+                        alt={song.title}
+                        className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
+                      />
+                      
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold truncate">{song.title}</h3>
+                        <p className="text-sm text-muted-foreground truncate flex items-center gap-2">
+                          {song.artist}
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${
+                            song.source === 'local'
+                              ? 'bg-purple-500/20 text-purple-500'
+                              : song.source === 'downloaded'
+                              ? 'bg-green-500/20 text-green-500'
+                              : 'bg-blue-500/20 text-blue-500'
+                          }`}>
+                            {song.source === 'local' && (
+                              <>
+                                <HardDrive className="w-3 h-3" />
+                                Local
+                              </>
+                            )}
+                            {song.source === 'downloaded' && (
+                              <>
+                                <Download className="w-3 h-3" />
+                                Offline
+                              </>
+                            )}
+                            {song.source === 'online' && (
+                              <>
+                                <Music className="w-3 h-3" />
+                                Online
+                              </>
+                            )}
+                          </span>
+                        </p>
+                      </div>
+                      
+                      <span className="text-sm text-muted-foreground">
+                        {formatDuration(song.duration)}
+                      </span>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-20">
-                {activeTab === 'all' && (
-                  <>
-                    <Music className="w-20 h-20 text-muted-foreground mx-auto mb-4 opacity-50" />
-                    <h2 className="text-2xl font-bold mb-2">Your Library is Empty</h2>
-                    <p className="text-muted-foreground mb-6">
-                      Start building your music collection
-                    </p>
-                    <div className="flex flex-wrap items-center justify-center gap-3">
-                      <a
-                        href="/upload"
-                        className="px-6 py-3 bg-gradient-primary rounded-full font-semibold hover:scale-105 transition-transform flex items-center gap-2"
-                      >
-                        <Upload className="w-4 h-4" />
-                        Upload Music
-                      </a>
-                      <a
-                        href="/local-music"
-                        className="px-6 py-3 glass-card rounded-full font-semibold hover:bg-white/10 transition-colors flex items-center gap-2"
-                      >
-                        <HardDrive className="w-4 h-4" />
-                        Add Local Music
-                      </a>
-                    </div>
-                  </>
-                )}
-                
-                {activeTab === 'online' && (
-                  <>
-                    <Cloud className="w-20 h-20 text-muted-foreground mx-auto mb-4 opacity-50" />
-                    <h2 className="text-2xl font-bold mb-2">No Online Songs</h2>
-                    <p className="text-muted-foreground mb-6">
-                      Upload songs or like tracks to build your online library
-                    </p>
-                  </>
-                )}
-                
-                {activeTab === 'downloads' && (
-                  <>
-                    <Download className="w-20 h-20 text-muted-foreground mx-auto mb-4 opacity-50" />
-                    <h2 className="text-2xl font-bold mb-2">No Downloaded Songs</h2>
-                    <p className="text-muted-foreground mb-6">
-                      Download songs for offline listening from any song page
-                    </p>
-                  </>
-                )}
-                
-                {activeTab === 'local' && (
-                  <>
-                    <HardDrive className="w-20 h-20 text-muted-foreground mx-auto mb-4 opacity-50" />
-                    <h2 className="text-2xl font-bold mb-2">No Local Music</h2>
-                    <p className="text-muted-foreground mb-6">
-                      Import music files from your device to play offline
-                    </p>
-                    <a
-                      href="/local-music"
-                      className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-primary rounded-full font-semibold hover:scale-105 transition-transform"
-                    >
-                      <HardDrive className="w-4 h-4" />
-                      Add Local Music
-                    </a>
-                  </>
-                )}
-              </div>
-            )}
-          </>
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
     </div>
