@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../stores/authStore';
 import { Navigate } from 'react-router-dom';
-import { Folder, Music, Play, Pause, Plus, Trash2, ListMusic, Download, Loader2, HardDrive, Sparkles } from 'lucide-react';
+import { Folder, Music, Play, Pause, Plus, Trash2, ListMusic, Download, Loader2, HardDrive, Sparkles, Smartphone } from 'lucide-react';
 import { usePlayerStore } from '../stores/playerStore';
 import { autoDiscoverMusic, getLocalSongs, LocalSong, createSongFromFile, autoSyncLocalMusic } from '../lib/localMusic';
+import { Capacitor } from '@capacitor/core';
 
 export default function LocalMusicPage() {
   const { isAuthenticated } = useAuth();
@@ -13,10 +14,14 @@ export default function LocalMusicPage() {
   const [autoScanning, setAutoScanning] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Load cached local songs and auto-sync on mount
+  const isMobile = Capacitor.isNativePlatform();
+  
   useEffect(() => {
     loadCachedSongs();
-    autoSync();
+    if (isMobile) {
+      // Auto-sync on mobile devices
+      autoSync();
+    }
   }, []);
   
   const loadCachedSongs = async () => {
@@ -47,14 +52,13 @@ export default function LocalMusicPage() {
       setLocalSongs([...localSongs, ...discovered]);
       
       if (discovered.length > 0) {
-        alert(`Successfully discovered ${discovered.length} songs! They are now synced and available offline in your Library.`);
+        alert(`✅ Successfully discovered ${discovered.length} songs! They are now synced and available offline in your Library.`);
       }
     } catch (error: any) {
       console.error('Error auto-discovering music:', error);
       
-      // Show user-friendly error message
       const errorMessage = error.message || 'Failed to auto-discover music. Please try again.';
-      alert(errorMessage);
+      alert(`❌ ${errorMessage}`);
     } finally {
       setAutoScanning(false);
     }
@@ -78,17 +82,22 @@ export default function LocalMusicPage() {
       setLocalSongs([...localSongs, ...newSongs]);
       
       if (newSongs.length > 0) {
-        alert(`Successfully imported ${newSongs.length} songs!`);
+        alert(`✅ Successfully imported ${newSongs.length} songs!`);
       }
     } catch (error) {
       console.error('Error importing files:', error);
-      alert('Failed to import some files. Please try again.');
+      alert('❌ Failed to import some files. Please try again.');
     } finally {
       setLoading(false);
     }
   };
   
   const handleImportFolder = async () => {
+    if (isMobile) {
+      alert('📱 On mobile devices, please use the "Auto-Discover & Sync" feature to scan all music on your device.');
+      return;
+    }
+    
     try {
       // @ts-ignore - File System Access API
       const dirHandle = await window.showDirectoryPicker();
@@ -117,13 +126,13 @@ export default function LocalMusicPage() {
       setLocalSongs([...localSongs, ...newSongs]);
       
       if (newSongs.length > 0) {
-        alert(`Successfully imported ${newSongs.length} songs from folder!`);
+        alert(`✅ Successfully imported ${newSongs.length} songs from folder!`);
       }
     } catch (error: any) {
       console.error('Error importing folder:', error);
       
       if (error.name !== 'AbortError') {
-        alert('Failed to import folder. Your browser may not support this feature. Please use Chrome or Edge.');
+        alert('❌ Failed to import folder. Your browser may not support this feature. Please use Chrome or Edge.');
       }
     } finally {
       setLoading(false);
@@ -150,6 +159,7 @@ export default function LocalMusicPage() {
   };
   
   const formatDuration = (seconds: number) => {
+    if (!seconds || seconds === 0) return '--:--';
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -169,7 +179,9 @@ export default function LocalMusicPage() {
             Local Music Library
           </h1>
           <p className="text-muted-foreground">
-            Auto-discover and play music from your device. Works offline!
+            {isMobile 
+              ? '📱 Auto-discover and play music from your device. Works offline!' 
+              : '💻 Import and play music from your computer. Works offline!'}
           </p>
         </div>
         
@@ -177,13 +189,16 @@ export default function LocalMusicPage() {
         <div className="glass-card p-6 rounded-2xl mb-6 bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/20">
           <div className="flex items-start gap-4">
             <div className="w-16 h-16 bg-gradient-primary rounded-full flex items-center justify-center flex-shrink-0">
-              <Sparkles className="w-8 h-8" />
+              {isMobile ? <Smartphone className="w-8 h-8" /> : <Sparkles className="w-8 h-8" />}
             </div>
             <div className="flex-1">
-              <h2 className="text-xl font-bold mb-2">Auto-Discover & Sync Music</h2>
+              <h2 className="text-xl font-bold mb-2">
+                {isMobile ? 'Auto-Discover Device Music' : 'Auto-Discover & Sync Music'}
+              </h2>
               <p className="text-muted-foreground mb-4">
-                Grant access to your music folder once, and we'll automatically find, sync, and keep your music library up to date.
-                All songs will be available offline. Supports MP3, WAV, FLAC, OGG, M4A, AAC, and more!
+                {isMobile 
+                  ? '📱 Tap below to scan and sync all music files on your Android device. Your music will be automatically discovered from Music, Downloads, and Documents folders. All songs will be available offline!'
+                  : '💻 Grant access to your music folder once, and we\'ll automatically find, sync, and keep your music library up to date. All songs will be available offline. Supports MP3, WAV, FLAC, OGG, M4A, AAC, and more!'}
               </p>
               <button
                 onClick={handleAutoDiscover}
@@ -197,8 +212,8 @@ export default function LocalMusicPage() {
                   </>
                 ) : (
                   <>
-                    <HardDrive className="w-5 h-5" />
-                    Auto-Discover & Sync
+                    {isMobile ? <Smartphone className="w-5 h-5" /> : <HardDrive className="w-5 h-5" />}
+                    {isMobile ? 'Scan Device Music' : 'Auto-Discover & Sync'}
                   </>
                 )}
               </button>
@@ -206,9 +221,79 @@ export default function LocalMusicPage() {
           </div>
         </div>
         
-        {/* Manual Import Options */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-          <div className="glass-card p-6 rounded-2xl">
+        {/* Manual Import Options (Desktop only) */}
+        {!isMobile && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+            <div className="glass-card p-6 rounded-2xl">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="audio/*"
+                multiple
+                onChange={handleImportFiles}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading}
+                className="w-full"
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center">
+                    <Music className="w-8 h-8 text-primary" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="font-bold mb-1">Import Files</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Select individual music files from your device
+                    </p>
+                  </div>
+                  <div className="px-4 py-2 bg-primary rounded-full font-semibold flex items-center gap-2 hover:scale-105 transition-transform">
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        Choose Files
+                      </>
+                    )}
+                  </div>
+                </div>
+              </button>
+            </div>
+            
+            <div className="glass-card p-6 rounded-2xl">
+              <button
+                onClick={handleImportFolder}
+                disabled={loading}
+                className="w-full"
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-16 h-16 bg-accent/20 rounded-full flex items-center justify-center">
+                    <Folder className="w-8 h-8 text-accent" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="font-bold mb-1">Import Folder</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Select an entire music folder to import all songs
+                    </p>
+                  </div>
+                  <div className="px-4 py-2 bg-accent rounded-full font-semibold flex items-center gap-2 hover:scale-105 transition-transform">
+                    <Folder className="w-4 h-4" />
+                    Choose Folder
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {/* Mobile Import Button */}
+        {isMobile && (
+          <div className="glass-card p-6 rounded-2xl mb-8">
             <input
               ref={fileInputRef}
               type="file"
@@ -222,57 +307,27 @@ export default function LocalMusicPage() {
               disabled={loading}
               className="w-full"
             >
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center">
-                  <Music className="w-8 h-8 text-primary" />
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-primary/20 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Music className="w-7 h-7 text-primary" />
                 </div>
-                <div className="text-center">
-                  <h3 className="font-bold mb-1">Import Files</h3>
+                <div className="flex-1 text-left">
+                  <h3 className="font-bold mb-1">Import Files Manually</h3>
                   <p className="text-sm text-muted-foreground">
-                    Select individual music files from your device
+                    Choose individual audio files to import
                   </p>
                 </div>
-                <div className="px-4 py-2 bg-primary rounded-full font-semibold flex items-center gap-2 hover:scale-105 transition-transform">
+                <div className="px-4 py-2 bg-primary rounded-full font-semibold flex items-center gap-2">
                   {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading...
-                    </>
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <>
-                      <Plus className="w-4 h-4" />
-                      Choose Files
-                    </>
+                    <Plus className="w-4 h-4" />
                   )}
                 </div>
               </div>
             </button>
           </div>
-          
-          <div className="glass-card p-6 rounded-2xl">
-            <button
-              onClick={handleImportFolder}
-              disabled={loading}
-              className="w-full"
-            >
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-16 h-16 bg-accent/20 rounded-full flex items-center justify-center">
-                  <Folder className="w-8 h-8 text-accent" />
-                </div>
-                <div className="text-center">
-                  <h3 className="font-bold mb-1">Import Folder</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Select an entire music folder to import all songs
-                  </p>
-                </div>
-                <div className="px-4 py-2 bg-accent rounded-full font-semibold flex items-center gap-2 hover:scale-105 transition-transform">
-                  <Folder className="w-4 h-4" />
-                  Choose Folder
-                </div>
-              </div>
-            </button>
-          </div>
-        </div>
+        )}
         
         {/* Songs List */}
         {localSongs.length === 0 ? (
@@ -280,7 +335,9 @@ export default function LocalMusicPage() {
             <Music className="w-20 h-20 text-muted-foreground mx-auto mb-4 opacity-50" />
             <h2 className="text-2xl font-bold mb-2">No Local Music Yet</h2>
             <p className="text-muted-foreground mb-6">
-              Use auto-discover or import music files from your device to get started
+              {isMobile 
+                ? 'Tap "Scan Device Music" above to automatically find all music on your device'
+                : 'Use auto-discover or import music files from your device to get started'}
             </p>
           </div>
         ) : (
@@ -383,10 +440,12 @@ export default function LocalMusicPage() {
           </div>
           
           <div className="glass-card p-6 rounded-xl text-center">
-            <Folder className="w-8 h-8 text-accent mx-auto mb-3" />
+            {isMobile ? <Smartphone className="w-8 h-8 text-accent mx-auto mb-3" /> : <Folder className="w-8 h-8 text-accent mx-auto mb-3" />}
             <h3 className="font-semibold mb-2">Auto-Discovery & Sync</h3>
             <p className="text-sm text-muted-foreground">
-              Automatically finds and syncs all music on your device
+              {isMobile 
+                ? 'Automatically finds all music on your device'
+                : 'Automatically finds and syncs all music in your folder'}
             </p>
           </div>
           

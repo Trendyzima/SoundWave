@@ -1,13 +1,221 @@
 import { Song } from '../types';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 
 export interface LocalSong extends Song {
   file?: File;
   isLocal: true;
   downloaded?: boolean;
+  filePath?: string; // For mobile devices
 }
 
-// Enhanced auto-discovery with better error handling and auto-sync
+// Platform detection
+const isMobile = () => Capacitor.isNativePlatform();
+const isAndroid = () => Capacitor.getPlatform() === 'android';
+
+// Auto-discover music on Android using MediaStore
+const autoDiscoverMusicAndroid = async (): Promise<LocalSong[]> => {
+  try {
+    // Request permissions first
+    const hasPermission = await requestStoragePermission();
+    if (!hasPermission) {
+      throw new Error('Storage permission denied. Please grant storage access in your device settings.');
+    }
+
+    // Get all audio files from Android MediaStore
+    const audioFiles = await scanAndroidMediaStore();
+    
+    if (audioFiles.length === 0) {
+      throw new Error('No music files found on your device.');
+    }
+
+    const songs = await Promise.all(
+      audioFiles.map(file => createSongFromAndroidFile(file))
+    );
+
+    // Save to IndexedDB
+    await saveLocalSongs(songs);
+    
+    return songs;
+  } catch (error: any) {
+    console.error('Error auto-discovering music on Android:', error);
+    throw error;
+  }
+};
+
+// Request storage permission on Android
+const requestStoragePermission = async (): Promise<boolean> => {
+  if (!isAndroid()) return true;
+
+  try {
+    // @ts-ignore - Using Capacitor's permission API
+    const { Permissions } = await import('@capacitor/core');
+    
+    // Check current permission status
+    const status = await Permissions.query({ name: 'storage' });
+    
+    if (status.state === 'granted') {
+      return true;
+    }
+
+    // Request permission
+    const result = await Permissions.request({ name: 'storage' });
+    return result.state === 'granted';
+  } catch (error) {
+    console.warn('Permission check failed:', error);
+    // On Android 13+, READ_MEDIA_AUDIO is granted by default
+    return true;
+  }
+};
+
+// Scan Android MediaStore for audio files using Capacitor
+const scanAndroidMediaStore = async (): Promise<any[]> => {
+  if (!isAndroid()) return [];
+
+  try {
+    // Use Capacitor's Filesystem to scan common music directories
+    const musicDirs = [
+      { directory: Directory.ExternalStorage, path: 'Music' },
+      { directory: Directory.ExternalStorage, path: 'Download' },
+      { directory: Directory.Documents, path: '' },
+    ];
+
+    const allFiles: any[] = [];
+
+    for (const { directory, path } of musicDirs) {
+      try {
+        const files = await scanDirectoryRecursive(directory, path);
+        allFiles.push(...files);
+      } catch (error) {
+        console.warn(`Failed to scan ${path}:`, error);
+      }
+    }
+
+    return allFiles;
+  } catch (error) {
+    console.error('Error scanning MediaStore:', error);
+    return [];
+  }
+};
+
+// Recursively scan directory
+const scanDirectoryRecursive = async (
+  directory: Directory,
+  path: string,
+  depth: number = 0,
+  maxDepth: number = 3
+): Promise<any[]> => {
+  if (depth >= maxDepth) return [];
+
+  const files: any[] = [];
+
+  try {
+    const result = await Filesystem.readdir({
+      directory,
+      path,
+    });
+
+    for (const file of result.files) {
+      const filePath = path ? `${path}/${file.name}` : file.name;
+
+      if (file.type === 'directory') {
+        // Recursively scan subdirectories
+        const subFiles = await scanDirectoryRecursive(
+          directory,
+          filePath,
+          depth + 1,
+          maxDepth
+        );
+        files.push(...subFiles);
+      } else if (isAudioFileName(file.name)) {
+        files.push({
+          name: file.name,
+          path: filePath,
+          directory,
+        });
+      }
+    }
+  } catch (error) {
+    // Directory doesn't exist or not accessible
+    console.warn(`Cannot read directory ${path}:`, error);
+  }
+
+  return files;
+};
+
+// Check if filename is an audio file
+const isAudioFileName = (fileName: string): boolean => {
+  const audioExtensions = [
+    'mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac', 'wma', 'opus', 'webm',
+    'ape', 'alac', 'aiff', 'aif', 'dsd', 'dsf', 'pcm', 'wv', 'mka',
+  ];
+  const extension = fileName.split('.').pop()?.toLowerCase();
+  return audioExtensions.includes(extension || '');
+};
+
+// Create song from Android file
+const createSongFromAndroidFile = async (file: any): Promise<LocalSong> => {
+  try {
+    const fileName = file.name.replace(/\.[^/.]+$/, '');
+    
+    // Parse filename for metadata (Artist - Title pattern)
+    const parts = fileName.split('-').map((p: string) => p.trim());
+    const artist = parts.length >= 2 ? parts[0] : 'Unknown Artist';
+    const title = parts.length >= 2 ? parts.slice(1).join(' - ') : fileName;
+
+    // Read file to get URI for playback
+    const fileUri = await Filesystem.getUri({
+      directory: file.directory,
+      path: file.path,
+    });
+
+    const song: LocalSong = {
+      id: `local_android_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+      title,
+      artist,
+      album: 'Local Music',
+      coverUrl: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=400&h=400&fit=crop',
+      duration: 0, // We'll update this when the audio loads
+      audioUrl: Capacitor.convertFileSrc(fileUri.uri), // Convert to web-accessible URL
+      plays: 0,
+      likes: 0,
+      releaseDate: '',
+      genre: 'Local',
+      description: '',
+      isLocal: true,
+      downloaded: true,
+      filePath: file.path,
+    };
+
+    return song;
+  } catch (error) {
+    console.error('Error creating song from Android file:', error);
+    throw error;
+  }
+};
+
+// Enhanced auto-discovery with platform detection
 export const autoDiscoverMusic = async (): Promise<LocalSong[]> => {
+  try {
+    if (isMobile()) {
+      // Use Android/iOS native APIs
+      if (isAndroid()) {
+        return await autoDiscoverMusicAndroid();
+      } else {
+        throw new Error('iOS music discovery not yet implemented. Please use Import Files feature.');
+      }
+    } else {
+      // Use web File System Access API for desktop
+      return await autoDiscoverMusicWeb();
+    }
+  } catch (error: any) {
+    console.error('Error auto-discovering music:', error);
+    throw error;
+  }
+};
+
+// Web-based auto-discovery (for desktop browsers)
+const autoDiscoverMusicWeb = async (): Promise<LocalSong[]> => {
   try {
     // Check if File System Access API is supported
     if (!('showDirectoryPicker' in window)) {
@@ -21,7 +229,7 @@ export const autoDiscoverMusic = async (): Promise<LocalSong[]> => {
     });
     
     const audioFiles: File[] = [];
-    await scanDirectory(dirHandle, audioFiles);
+    await scanDirectoryWeb(dirHandle, audioFiles);
     
     if (audioFiles.length === 0) {
       throw new Error('No audio files found in the selected folder.');
@@ -42,48 +250,12 @@ export const autoDiscoverMusic = async (): Promise<LocalSong[]> => {
     if (error.name === 'AbortError') {
       throw new Error('Folder selection was cancelled.');
     }
-    console.error('Error auto-discovering music:', error);
     throw error;
   }
 };
 
-// Auto-sync music from previously granted folder access
-export const autoSyncLocalMusic = async (): Promise<LocalSong[]> => {
-  try {
-    const dirHandle = await getSavedFolderHandle();
-    if (!dirHandle) {
-      return [];
-    }
-    
-    // Request permission if needed
-    const permission = await dirHandle.requestPermission({ mode: 'read' });
-    if (permission !== 'granted') {
-      return [];
-    }
-    
-    const audioFiles: File[] = [];
-    await scanDirectory(dirHandle, audioFiles);
-    
-    if (audioFiles.length === 0) {
-      return [];
-    }
-    
-    const songs = await Promise.all(
-      audioFiles.map(file => createSongFromFile(file))
-    );
-    
-    // Save to IndexedDB for offline access
-    await saveLocalSongs(songs);
-    
-    return songs;
-  } catch (error) {
-    console.warn('Auto-sync failed, user needs to re-grant access:', error);
-    return [];
-  }
-};
-
-// Recursively scan directory for audio files
-const scanDirectory = async (dirHandle: any, audioFiles: File[], maxDepth = 5, currentDepth = 0) => {
+// Scan directory (web version)
+const scanDirectoryWeb = async (dirHandle: any, audioFiles: File[], maxDepth = 5, currentDepth = 0) => {
   if (currentDepth >= maxDepth) return;
   
   try {
@@ -95,12 +267,10 @@ const scanDirectory = async (dirHandle: any, audioFiles: File[], maxDepth = 5, c
             audioFiles.push(file);
           }
         } else if (entry.kind === 'directory') {
-          // Recursively scan subdirectories
-          await scanDirectory(entry, audioFiles, maxDepth, currentDepth + 1);
+          await scanDirectoryWeb(entry, audioFiles, maxDepth, currentDepth + 1);
         }
       } catch (error) {
         console.warn(`Failed to access ${entry.name}:`, error);
-        // Continue with other files
       }
     }
   } catch (error) {
@@ -110,19 +280,53 @@ const scanDirectory = async (dirHandle: any, audioFiles: File[], maxDepth = 5, c
 
 // Check if file is an audio file
 const isAudioFile = (file: File): boolean => {
-  // Check MIME type first
   if (file.type.startsWith('audio/')) {
     return true;
   }
   
-  // Fallback to extension check
   const audioExtensions = [
     'mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac', 'wma', 'opus', 'webm',
     'ape', 'alac', 'aiff', 'aif', 'dsd', 'dsf', 'pcm', 'wv', 'mka',
-    'mp2', 'mp1', 'mpga', 'oga', 'spx', 'amr', 'awb', '3gp', 'mid', 'midi'
   ];
   const extension = file.name.split('.').pop()?.toLowerCase();
   return audioExtensions.includes(extension || '');
+};
+
+// Auto-sync music from previously granted folder access
+export const autoSyncLocalMusic = async (): Promise<LocalSong[]> => {
+  try {
+    if (isMobile()) {
+      // On mobile, auto-sync by rescanning MediaStore
+      if (isAndroid()) {
+        const hasPermission = await requestStoragePermission();
+        if (!hasPermission) return [];
+        return await autoDiscoverMusicAndroid();
+      }
+      return [];
+    } else {
+      // On web, use saved folder handle
+      const dirHandle = await getSavedFolderHandle();
+      if (!dirHandle) return [];
+      
+      const permission = await dirHandle.requestPermission({ mode: 'read' });
+      if (permission !== 'granted') return [];
+      
+      const audioFiles: File[] = [];
+      await scanDirectoryWeb(dirHandle, audioFiles);
+      
+      if (audioFiles.length === 0) return [];
+      
+      const songs = await Promise.all(
+        audioFiles.map((file: File) => createSongFromFile(file))
+      );
+      
+      await saveLocalSongs(songs);
+      return songs;
+    }
+  } catch (error) {
+    console.warn('Auto-sync failed:', error);
+    return [];
+  }
 };
 
 // Create song object from file with metadata extraction
@@ -131,7 +335,6 @@ export const createSongFromFile = async (file: File): Promise<LocalSong> => {
     const audioUrl = URL.createObjectURL(file);
     const audio = new Audio(audioUrl);
     
-    // Wait for metadata to load with timeout
     const metadata = await Promise.race([
       new Promise<any>((resolve) => {
         audio.addEventListener('loadedmetadata', async () => {
@@ -163,7 +366,7 @@ export const createSongFromFile = async (file: File): Promise<LocalSong> => {
           year: null,
           genre: null,
           coverUrl: null,
-        }), 3000) // 3 second timeout
+        }), 3000)
       ),
     ]);
     
@@ -196,11 +399,7 @@ export const createSongFromFile = async (file: File): Promise<LocalSong> => {
 
 // Extract metadata from audio file
 const extractMetadata = async (file: File): Promise<any> => {
-  // Basic metadata extraction from filename
-  // In production, you could use jsmediatags library for full ID3 tag support
-  
   try {
-    // Try to parse common filename patterns like "Artist - Title.mp3"
     const fileName = file.name.replace(/\.[^/.]+$/, '');
     const parts = fileName.split('-').map(p => p.trim());
     
@@ -228,7 +427,7 @@ const extractMetadata = async (file: File): Promise<any> => {
   };
 };
 
-// IndexedDB operations for offline storage
+// IndexedDB operations
 const DB_NAME = 'soundwave_library';
 const STORE_NAME = 'local_songs';
 const FOLDER_HANDLE_STORE = 'folder_handles';
@@ -243,14 +442,12 @@ const openDB = (): Promise<IDBDatabase> => {
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
       
-      // Create local_songs store if doesn't exist
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
         store.createIndex('title', 'title', { unique: false });
         store.createIndex('artist', 'artist', { unique: false });
       }
       
-      // Create folder_handles store for persistent folder access
       if (!db.objectStoreNames.contains(FOLDER_HANDLE_STORE)) {
         db.createObjectStore(FOLDER_HANDLE_STORE, { keyPath: 'id' });
       }
@@ -264,7 +461,6 @@ export const saveLocalSongs = async (songs: LocalSong[]): Promise<void> => {
   const store = transaction.objectStore(STORE_NAME);
   
   for (const song of songs) {
-    // Don't store the File object, just metadata
     const { file, ...songData } = song;
     store.put(songData);
   }
@@ -300,15 +496,12 @@ export const deleteLocalSong = async (songId: string): Promise<void> => {
   });
 };
 
-// Download song for offline listening
 export const downloadSongForOffline = async (song: Song): Promise<LocalSong> => {
   try {
-    // Download audio file
     const audioResponse = await fetch(song.audioUrl);
     const audioBlob = await audioResponse.blob();
     const audioFile = new File([audioBlob], `${song.title}.mp3`, { type: 'audio/mpeg' });
     
-    // Download cover image if available
     let coverBlob: Blob | null = null;
     if (song.coverUrl && !song.coverUrl.includes('unsplash') && !song.coverUrl.includes('placeholder')) {
       try {
@@ -328,9 +521,7 @@ export const downloadSongForOffline = async (song: Song): Promise<LocalSong> => 
       downloaded: true,
     };
     
-    // Save to IndexedDB
     await saveLocalSongs([localSong]);
-    
     return localSong;
   } catch (error) {
     console.error('Error downloading song:', error);
@@ -338,13 +529,11 @@ export const downloadSongForOffline = async (song: Song): Promise<LocalSong> => 
   }
 };
 
-// Check if song is downloaded
 export const isSongDownloaded = async (songId: string): Promise<boolean> => {
   const songs = await getLocalSongs();
   return songs.some(s => s.id === songId);
 };
 
-// Clear all local songs
 export const clearLocalSongs = async (): Promise<void> => {
   const db = await openDB();
   const transaction = db.transaction([STORE_NAME], 'readwrite');
@@ -358,8 +547,9 @@ export const clearLocalSongs = async (): Promise<void> => {
   });
 };
 
-// Save folder handle for auto-sync
 const saveFolderHandle = async (dirHandle: any): Promise<void> => {
+  if (isMobile()) return; // Not applicable on mobile
+  
   try {
     const db = await openDB();
     const transaction = db.transaction([FOLDER_HANDLE_STORE], 'readwrite');
@@ -376,8 +566,9 @@ const saveFolderHandle = async (dirHandle: any): Promise<void> => {
   }
 };
 
-// Get saved folder handle
 const getSavedFolderHandle = async (): Promise<any> => {
+  if (isMobile()) return null;
+  
   try {
     const db = await openDB();
     const transaction = db.transaction([FOLDER_HANDLE_STORE], 'readonly');
