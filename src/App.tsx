@@ -28,6 +28,12 @@ import ChallengesPage from './pages/ChallengesPage';
 import AdminDashboard from './pages/AdminDashboard';
 import KaraokeStudioPage from './pages/KaraokeStudioPage';
 import LocalMusicPage from './pages/LocalMusicPage';
+import ChartsPage from './pages/ChartsPage';
+import AlbumsPage from './pages/AlbumsPage';
+import ArtistsPage from './pages/ArtistsPage';
+import GenresPage from './pages/GenresPage';
+import NewReleasesPage from './pages/NewReleasesPage';
+import ForYouPage from './pages/ForYouPage';
 
 export default function App() {
   const { login, logout, setLoading } = useAuthStore();
@@ -96,6 +102,12 @@ export default function App() {
           <Route path="/challenges" element={<ChallengesPage />} />
           <Route path="/karaoke" element={<KaraokeStudioPage />} />
           <Route path="/local-music" element={<LocalMusicPage />} />
+          <Route path="/charts" element={<ChartsPage />} />
+          <Route path="/albums" element={<AlbumsPage />} />
+          <Route path="/artists" element={<ArtistsPage />} />
+          <Route path="/genres" element={<GenresPage />} />
+          <Route path="/new-releases" element={<NewReleasesPage />} />
+          <Route path="/for-you" element={<ForYouPage />} />
           <Route path="/admin" element={<AdminDashboard />} />
         </Routes>
         <BottomNav />

@@ -1,74 +1,110 @@
+import { Music4, Search, TrendingUp, Calendar, Sparkles, Disc3, Mic2, Music2, Radio, ListMusic, Headphones, Globe } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, Music, Mail, User, Library, Sparkles, Upload, Radio, Music2, Calendar, Trophy, Mic, HardDrive } from 'lucide-react';
-import { useAuth } from '../../stores/authStore';
 
 export default function DesktopSidebar() {
   const location = useLocation();
-  const { user, isAuthenticated } = useAuth();
-  
-  const navItems = [
-    { to: '/', icon: Home, label: 'Home' },
-    { to: '/search', icon: Search, label: 'Explore' },
-    { to: '/local-music', icon: HardDrive, label: 'Local Music' },
-    { to: '/podcasts', icon: Radio, label: 'Podcasts' },
-    { to: '/dj-mixes', icon: Music2, label: 'DJ Mixes' },
-    { to: '/events', icon: Calendar, label: 'Events' },
-    { to: '/challenges', icon: Trophy, label: 'Challenges' },
-    { to: '/karaoke', icon: Mic, label: 'Karaoke Studio' },
-    { to: '/messages', icon: Mail, label: 'Messages' },
-    { to: '/ai-assistant', icon: Sparkles, label: 'AI Assistant' },
-    { to: '/library', icon: Library, label: 'Library' },
-    { to: '/profile', icon: User, label: 'Profile' },
+
+  const isActive = (path: string) => location.pathname === path;
+
+  const mainLinks = [
+    { to: '/', icon: Music4, label: 'Home', color: 'text-primary' },
+    { to: '/for-you', icon: Sparkles, label: 'For You', color: 'text-yellow-500' },
+    { to: '/search', icon: Search, label: 'Search', color: 'text-accent' },
+    { to: '/charts', icon: TrendingUp, label: 'Top Charts', color: 'text-green-500' },
+    { to: '/new-releases', icon: Calendar, label: 'New Releases', color: 'text-blue-500' },
   ];
-  
+
+  const discoverLinks = [
+    { to: '/albums', icon: Disc3, label: 'Albums', color: 'text-purple-500' },
+    { to: '/artists', icon: Mic2, label: 'Artists', color: 'text-pink-500' },
+    { to: '/genres', icon: Music2, label: 'Genres & Moods', color: 'text-orange-500' },
+    { to: '/podcasts', icon: Radio, label: 'Podcasts & Live', color: 'text-red-500' },
+    { to: '/dj-mixes', icon: Headphones, label: 'DJ Mixes', color: 'text-cyan-500' },
+    { to: '/events', icon: Globe, label: 'Events', color: 'text-teal-500' },
+  ];
+
+  const libraryLinks = [
+    { to: '/library', icon: ListMusic, label: 'Your Library', color: 'text-indigo-500' },
+    { to: '/local-music', icon: Music4, label: 'Local Music', color: 'text-violet-500' },
+  ];
+
   return (
-    <div className="hidden md:flex fixed left-0 top-0 bottom-0 w-64 lg:w-72 p-4 border-r border-white/10 flex-col z-30">
-      <div className="flex flex-col gap-2 flex-1">
-        {navItems.map((item) => {
-          const isActive = location.pathname === item.to;
-          return (
+    <aside className="hidden md:flex md:w-64 lg:w-72 fixed left-0 top-0 h-screen bg-background/95 backdrop-blur-sm border-r border-white/10 z-40 flex-col">
+      <div className="flex-1 overflow-y-auto py-6 px-4 space-y-8">
+        {/* Main Navigation */}
+        <nav className="space-y-2">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-3">
+            Main
+          </h2>
+          {mainLinks.map(({ to, icon: Icon, label, color }) => (
             <Link
-              key={item.to}
-              to={item.to}
-              className={`flex items-center gap-4 px-4 py-3 rounded-full transition-all ${
-                isActive
-                  ? 'bg-white/10 text-foreground font-bold'
-                  : 'text-muted-foreground hover:bg-white/5'
+              key={to}
+              to={to}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
+                isActive(to)
+                  ? 'bg-gradient-to-r from-primary/20 to-accent/20 text-white font-semibold scale-105'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
               }`}
             >
-              <item.icon className="w-6 h-6" />
-              <span className="text-lg">{item.label}</span>
+              <Icon className={`w-5 h-5 ${isActive(to) ? color : ''}`} />
+              <span>{label}</span>
             </Link>
-          );
-        })}
-        
-        {isAuthenticated && (
-          <Link
-            to="/upload"
-            className="mt-4 flex items-center justify-center gap-2 px-6 py-3 bg-primary rounded-full font-bold hover:bg-primary/90 transition-all"
-          >
-            <Upload className="w-5 h-5" />
-            Upload
-          </Link>
-        )}
+          ))}
+        </nav>
+
+        {/* Discover Section */}
+        <nav className="space-y-2">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-3">
+            Discover
+          </h2>
+          {discoverLinks.map(({ to, icon: Icon, label, color }) => (
+            <Link
+              key={to}
+              to={to}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
+                isActive(to)
+                  ? 'bg-gradient-to-r from-primary/20 to-accent/20 text-white font-semibold scale-105'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+              }`}
+            >
+              <Icon className={`w-5 h-5 ${isActive(to) ? color : ''}`} />
+              <span>{label}</span>
+            </Link>
+          ))}
+        </nav>
+
+        {/* Library Section */}
+        <nav className="space-y-2">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-3">
+            Library
+          </h2>
+          {libraryLinks.map(({ to, icon: Icon, label, color }) => (
+            <Link
+              key={to}
+              to={to}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
+                isActive(to)
+                  ? 'bg-gradient-to-r from-primary/20 to-accent/20 text-white font-semibold scale-105'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+              }`}
+            >
+              <Icon className={`w-5 h-5 ${isActive(to) ? color : ''}`} />
+              <span>{label}</span>
+            </Link>
+          ))}
+        </nav>
       </div>
-      
-      {isAuthenticated && user && (
+
+      {/* Bottom Links */}
+      <div className="p-4 border-t border-white/10">
         <Link
-          to="/profile"
-          className="flex items-center gap-3 p-3 rounded-full hover:bg-white/5 transition-colors"
+          to="/upload"
+          className="w-full px-4 py-3 bg-gradient-primary rounded-full font-semibold hover:scale-105 transition-transform flex items-center justify-center gap-2"
         >
-          <img
-            src={user.avatarUrl}
-            alt={user.username}
-            className="w-10 h-10 rounded-full object-cover"
-          />
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold truncate">{user.username}</p>
-            <p className="text-sm text-muted-foreground truncate">@{user.username}</p>
-          </div>
+          <Music4 className="w-5 h-5" />
+          Upload Music
         </Link>
-      )}
-    </div>
+      </div>
+    </aside>
   );
 }

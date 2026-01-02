@@ -13,6 +13,8 @@ export interface Song {
   description?: string;
   hashtags?: string[];
   videoUrl?: string;
+  lyrics?: string;
+  hasLyrics?: boolean;
 }
 
 export interface Hashtag {
@@ -87,6 +89,8 @@ export interface Playlist {
   songs: Song[];
   createdBy: string;
   isAiGenerated?: boolean;
+  isCollaborative?: boolean;
+  collaborators?: string[];
 }
 
 export interface ListeningHistory {
@@ -247,4 +251,67 @@ export interface Advertisement {
   status: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Album {
+  id: string;
+  title: string;
+  artist: string;
+  coverUrl: string;
+  releaseDate: string;
+  genre: string;
+  songs: Song[];
+  totalDuration: number;
+  plays: number;
+}
+
+export interface Artist {
+  id: string;
+  name: string;
+  bio?: string;
+  avatarUrl: string;
+  coverUrl?: string;
+  genre: string;
+  followers: number;
+  topSongs: Song[];
+  albums: Album[];
+  monthlyListeners: number;
+}
+
+export interface Chart {
+  id: string;
+  type: 'global' | 'regional' | 'genre';
+  region?: string;
+  genre?: string;
+  songs: (Song & { rank: number; change: number })[];
+  updatedAt: string;
+}
+
+export interface DailyMix {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  coverUrl: string;
+  songs: Song[];
+  genre: string;
+  createdAt: string;
+}
+
+export interface MoodCategory {
+  id: string;
+  name: string;
+  description: string;
+  coverUrl: string;
+  color: string;
+  playlists: Playlist[];
+}
+
+export interface Lyrics {
+  songId: string;
+  lines: {
+    time: number; // seconds
+    text: string;
+  }[];
+  synced: boolean;
 }

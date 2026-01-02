@@ -14,18 +14,46 @@ interface PlayerState {
   isShuffled: boolean;
   repeatMode: RepeatMode;
   currentIndex: number;
+  playbackSpeed: number;
+  crossfadeEnabled: boolean;
+  crossfadeDuration: number;
+  sleepTimer: number | null; // Minutes remaining
+  equalizer: {
+    enabled: boolean;
+    preset: string;
+    bass: number;
+    mid: number;
+    treble: number;
+  };
+  showMiniPlayer: boolean;
+  showLyrics: boolean;
+  showQueue: boolean;
+  audioQuality: 'low' | 'normal' | 'high' | 'lossless';
+  dataSaverMode: boolean;
   play: (song: Song, newQueue?: Song[]) => void;
   pause: () => void;
   togglePlay: () => void;
   setCurrentTime: (time: number) => void;
   setVolume: (volume: number) => void;
   addToQueue: (song: Song) => void;
+  removeFromQueue: (index: number) => void;
+  reorderQueue: (fromIndex: number, toIndex: number) => void;
   playNext: () => void;
   playPrevious: () => void;
   toggleShuffle: () => void;
   cycleRepeat: () => void;
   handleSongEnd: () => void;
   clearQueue: () => void;
+  setPlaybackSpeed: (speed: number) => void;
+  toggleCrossfade: () => void;
+  setCrossfadeDuration: (duration: number) => void;
+  setSleepTimer: (minutes: number | null) => void;
+  setEqualizer: (settings: Partial<PlayerState['equalizer']>) => void;
+  toggleMiniPlayer: () => void;
+  toggleLyrics: () => void;
+  toggleQueue: () => void;
+  setAudioQuality: (quality: PlayerState['audioQuality']) => void;
+  toggleDataSaver: () => void;
 }
 
 // Shuffle array helper
@@ -48,6 +76,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   isShuffled: false,
   repeatMode: 'off',
   currentIndex: 0,
+  playbackSpeed: 1.0,
+  crossfadeEnabled: false,
+  crossfadeDuration: 5,
+  sleepTimer: null,
+  equalizer: {
+    enabled: false,
+    preset: 'flat',
+    bass: 0,
+    mid: 0,
+    treble: 0,
+  },
+  showMiniPlayer: false,
+  showLyrics: false,
+  showQueue: false,
+  audioQuality: 'normal',
+  dataSaverMode: false,
   
   play: async (song, newQueue) => {
     const state = get();
@@ -106,6 +150,34 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     queue: [...state.queue, song],
     originalQueue: [...state.originalQueue, song],
   })),
+  
+  removeFromQueue: (index) => set((state) => {
+    const newQueue = [...state.queue];
+    newQueue.splice(index, 1);
+    
+    const newOriginalQueue = [...state.originalQueue];
+    const originalIndex = newOriginalQueue.findIndex(s => s.id === state.queue[index].id);
+    if (originalIndex >= 0) {
+      newOriginalQueue.splice(originalIndex, 1);
+    }
+    
+    return { 
+      queue: newQueue,
+      originalQueue: newOriginalQueue,
+      currentIndex: index < state.currentIndex ? state.currentIndex - 1 : state.currentIndex,
+    };
+  }),
+  
+  reorderQueue: (fromIndex, toIndex) => set((state) => {
+    const newQueue = [...state.queue];
+    const [removed] = newQueue.splice(fromIndex, 1);
+    newQueue.splice(toIndex, 0, removed);
+    
+    return { 
+      queue: newQueue,
+      currentIndex: fromIndex === state.currentIndex ? toIndex : state.currentIndex,
+    };
+  }),
   
   playNext: () => {
     const { queue, currentIndex, repeatMode } = get();
@@ -186,7 +258,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
   
   handleSongEnd: () => {
-    const { repeatMode, queue, currentIndex } = get();
+    const { repeatMode } = get();
     
     if (repeatMode === 'one') {
       // Repeat current song
@@ -204,4 +276,26 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentIndex: 0,
     });
   },
+  
+  setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
+  
+  toggleCrossfade: () => set((state) => ({ crossfadeEnabled: !state.crossfadeEnabled })),
+  
+  setCrossfadeDuration: (duration) => set({ crossfadeDuration: duration }),
+  
+  setSleepTimer: (minutes) => set({ sleepTimer: minutes }),
+  
+  setEqualizer: (settings) => set((state) => ({
+    equalizer: { ...state.equalizer, ...settings },
+  })),
+  
+  toggleMiniPlayer: () => set((state) => ({ showMiniPlayer: !state.showMiniPlayer })),
+  
+  toggleLyrics: () => set((state) => ({ showLyrics: !state.showLyrics })),
+  
+  toggleQueue: () => set((state) => ({ showQueue: !state.showQueue })),
+  
+  setAudioQuality: (quality) => set({ audioQuality: quality }),
+  
+  toggleDataSaver: () => set((state) => ({ dataSaverMode: !state.dataSaverMode })),
 }));

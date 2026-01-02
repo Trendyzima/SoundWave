@@ -1,7 +1,11 @@
-import { Play, Pause, SkipBack, SkipForward, Volume2, Heart, ListMusic, Shuffle, Repeat, Repeat1 } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, Heart, ListMusic, Shuffle, Repeat, Repeat1, MoreHorizontal, Sliders, Timer, FileText } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { formatDuration } from '../../lib/utils';
 import { useEffect, useRef, useState } from 'react';
+import QueuePanel from '../features/QueuePanel';
+import SleepTimerPanel from '../features/SleepTimerPanel';
+import EqualizerPanel from '../features/EqualizerPanel';
+import LyricsPanel from '../features/LyricsPanel';
 
 export default function Player() {
   const { 
@@ -11,6 +15,8 @@ export default function Player() {
     volume, 
     isShuffled,
     repeatMode,
+    playbackSpeed,
+    sleepTimer,
     togglePlay, 
     playNext, 
     playPrevious, 
@@ -20,12 +26,18 @@ export default function Player() {
     toggleShuffle,
     cycleRepeat,
     handleSongEnd,
+    setPlaybackSpeed,
   } = usePlayerStore();
   
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
   const [isReady, setIsReady] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
+  const [showSleepTimer, setShowSleepTimer] = useState(false);
+  const [showEqualizer, setShowEqualizer] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   
   // Load audio when song changes
   useEffect(() => {
@@ -56,6 +68,13 @@ export default function Player() {
       audioRef.current.volume = volume;
     }
   }, [volume]);
+  
+  // Update playback speed
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackSpeed;
+    }
+  }, [playbackSpeed]);
   
   // Sync current time
   useEffect(() => {
@@ -104,6 +123,8 @@ export default function Player() {
   
   const RepeatIcon = repeatMode === 'one' ? Repeat1 : Repeat;
   
+  const speedOptions = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+  
   return (
     <>
       {/* Hidden Audio Element */}
@@ -123,13 +144,14 @@ export default function Player() {
             <img
               src={currentSong.coverUrl}
               alt={currentSong.title}
-              className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg object-cover flex-shrink-0"
+              className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg object-cover flex-shrink-0 cursor-pointer hover:scale-105 transition-transform"
+              onClick={() => setShowLyrics(true)}
             />
             <div className="min-w-0 flex-1">
               <h4 className="text-sm sm:text-base font-semibold text-foreground truncate">{currentSong.title}</h4>
               <p className="text-xs sm:text-sm text-muted-foreground truncate">{currentSong.artist}</p>
             </div>
-            <button className="hidden sm:block text-muted-foreground hover:text-primary transition-colors flex-shrink-0">
+            <button className="hidden sm:block text-muted-foreground hover:text-red-500 transition-colors flex-shrink-0">
               <Heart className="w-5 h-5" />
             </button>
           </div>
@@ -224,9 +246,98 @@ export default function Player() {
             {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
           </button>
           
-          {/* Volume & Queue */}
-          <div className="hidden lg:flex items-center gap-3 w-48">
-            <ListMusic className="w-5 h-5 text-muted-foreground" />
+          {/* Right Controls */}
+          <div className="hidden lg:flex items-center gap-3 w-64">
+            {/* Playback Speed */}
+            <div className="relative group">
+              <button className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors">
+                {playbackSpeed}x
+              </button>
+              <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block">
+                <div className="bg-background border border-white/10 rounded-lg p-2 space-y-1">
+                  {speedOptions.map(speed => (
+                    <button
+                      key={speed}
+                      onClick={() => setPlaybackSpeed(speed)}
+                      className={`block w-full px-3 py-1 text-sm rounded transition-colors ${
+                        playbackSpeed === speed
+                          ? 'bg-primary text-white'
+                          : 'hover:bg-white/10'
+                      }`}
+                    >
+                      {speed}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            
+            {/* Lyrics */}
+            <button
+              onClick={() => setShowLyrics(true)}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              title="Lyrics"
+            >
+              <FileText className="w-5 h-5" />
+            </button>
+            
+            {/* Queue */}
+            <button
+              onClick={() => setShowQueue(true)}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              title="Queue"
+            >
+              <ListMusic className="w-5 h-5" />
+            </button>
+            
+            {/* More Options */}
+            <div className="relative">
+              <button
+                onClick={() => setShowMoreMenu(!showMoreMenu)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                title="More"
+              >
+                <MoreHorizontal className="w-5 h-5" />
+              </button>
+              
+              {showMoreMenu && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setShowMoreMenu(false)}
+                  />
+                  <div className="absolute bottom-full right-0 mb-2 bg-background border border-white/10 rounded-lg p-2 space-y-1 min-w-[180px] z-50">
+                    <button
+                      onClick={() => {
+                        setShowEqualizer(true);
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full px-3 py-2 text-sm rounded hover:bg-white/10 transition-colors flex items-center gap-2"
+                    >
+                      <Sliders className="w-4 h-4" />
+                      Equalizer
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowSleepTimer(true);
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full px-3 py-2 text-sm rounded hover:bg-white/10 transition-colors flex items-center gap-2"
+                    >
+                      <Timer className="w-4 h-4" />
+                      Sleep Timer
+                      {sleepTimer && (
+                        <span className="ml-auto text-xs text-primary">
+                          {sleepTimer}m
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            
+            {/* Volume */}
             <Volume2 className="w-5 h-5 text-muted-foreground" />
             <div
               ref={volumeRef}
@@ -243,6 +354,12 @@ export default function Player() {
           </div>
         </div>
       </div>
+      
+      {/* Panels */}
+      {showQueue && <QueuePanel onClose={() => setShowQueue(false)} />}
+      {showSleepTimer && <SleepTimerPanel onClose={() => setShowSleepTimer(false)} />}
+      {showEqualizer && <EqualizerPanel onClose={() => setShowEqualizer(false)} />}
+      {showLyrics && <LyricsPanel onClose={() => setShowLyrics(false)} />}
     </>
   );
 }
